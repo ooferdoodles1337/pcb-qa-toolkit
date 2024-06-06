@@ -1,45 +1,46 @@
-from skimage.metrics import structural_similarity
-import cv2
+## Find object by orb features matching
+
 import numpy as np
+import cv2
+imgname = "test3-a.jpg"          # query image (small object)
+imgname2 = "test3-b.jpg" # train image (large scene)
 
-first = cv2.imread('images/test2-a.jpg')
-second = cv2.imread('images/test2-b.jpg')
+MIN_MATCH_COUNT = 4
 
-# Convert images to grayscale
-first_gray = cv2.cvtColor(first, cv2.COLOR_BGR2GRAY)
-second_gray = cv2.cvtColor(second, cv2.COLOR_BGR2GRAY)
+## Create ORB object and BF object(using HAMMING)
+orb = cv2.ORB_create()
+img1 = cv2.imread(imgname)
+img2 = cv2.imread(imgname2)
 
-# Compute SSIM between two images
-score, diff = structural_similarity(first_gray, second_gray, full=True)
-print("Similarity Score: {:.3f}%".format(score * 100))
+gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
 
-# The diff image contains the actual image differences between the two images
-# and is represented as a floating point data type so we must convert the array 
-# to 8-bit unsigned integers in the range [0,255] before we can use it with OpenCV
-diff = (diff * 255).astype("uint8")
+## Find the keypoints and descriptors with ORB
+kpts1, descs1 = orb.detectAndCompute(gray1,None)
+kpts2, descs2 = orb.detectAndCompute(gray2,None)
 
-# Threshold the difference image, followed by finding contours to
-# obtain the regions that differ between the two images
-thresh = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)[1]
-contours = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-contours = contours[0] if len(contours) == 2 else contours[1]
+## match descriptors and sort them in the order of their distance
+bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+matches = bf.match(descs1, descs2)
+dmatches = sorted(matches, key = lambda x:x.distance)
 
-# Highlight differences
-mask = np.zeros(first.shape, dtype='uint8')
-filled = second.copy()
+## extract the matched keypoints
+src_pts  = np.float32([kpts1[m.queryIdx].pt for m in dmatches]).reshape(-1,1,2)
+dst_pts  = np.float32([kpts2[m.trainIdx].pt for m in dmatches]).reshape(-1,1,2)
 
-for c in contours:
-    area = cv2.contourArea(c)
-    if area > 100:
-        x,y,w,h = cv2.boundingRect(c)
-        cv2.rectangle(first, (x, y), (x + w, y + h), (36,255,12), 2)
-        cv2.rectangle(second, (x, y), (x + w, y + h), (36,255,12), 2)
-        cv2.drawContours(mask, [c], 0, (0,255,0), -1)
-        cv2.drawContours(filled, [c], 0, (0,255,0), -1)
+## find homography matrix and do perspective transform
+M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+h,w = img1.shape[:2]
+pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
+dst = cv2.perspectiveTransform(pts,M)
 
-cv2.imshow('first', first)
-cv2.imshow('second', second)
-cv2.imshow('diff', diff)
-cv2.imshow('mask', mask)
-cv2.imshow('filled', filled)
-cv2.waitKey()
+## draw found regions
+img2 = cv2.polylines(img2, [np.int32(dst)], True, (0,0,255), 1, cv2.LINE_AA)
+cv2.imshow("found", img2)
+
+## draw match lines
+res = cv2.drawMatches(img1, kpts1, img2, kpts2, dmatches[:20],None,flags=2)
+
+cv2.imshow("orb_match", res);
+
+cv2.waitKey();cv2.destroyAllWindows()
