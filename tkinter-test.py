@@ -1,23 +1,25 @@
 import cv2
 from PIL import Image as PILImage, ImageTk
 from tkinter import *
+from tkinter import filedialog
 import threading
+
 
 class PCBQualityAssuranceApp:
     def __init__(self, root):
         print("Starting App")
         self.root = root
         self.root.title("PCB Quality Assurance Toolkit")
-        self.window_width = 1200
+        self.window_width = 1600
         self.window_height = 900
         self.root.geometry(f"{self.window_width}x{self.window_height}")
         self.root.config(bg="skyblue")
         root.minsize(800, 600)
-        root.maxsize(1440, 1080)
 
         self.reference_image = None  # Variable to store the reference image
+        self.current_frame = None  # Variable to store the current frame
 
-        self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Changed to use default camera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         print("Initialized Webcam")
@@ -27,7 +29,12 @@ class PCBQualityAssuranceApp:
         print("GUI Setup Complete")
 
         # Start video capture
-        self.root.after(500, self.capture_webcam_stream)
+        self.capture_thread = threading.Thread(target=self.capture_webcam)
+        self.capture_thread.daemon = True
+        self.capture_thread.start()
+
+        # Release the video capture when the app closes
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def setup_gui(self):
         # Configure grid layout
@@ -64,10 +71,10 @@ class PCBQualityAssuranceApp:
         self.button_frame = Frame(self.left_frame)
         self.button_frame.grid(row=2, column=0, sticky="nswe")
 
-        self.save_reference_button = Button(
-            self.button_frame, text="Take Reference", command=self.take_reference
+        self.capture_reference_button = Button(
+            self.button_frame, text="Capture Reference", command=self.capture_reference
         )
-        self.save_reference_button.grid(row=0, column=0, sticky="ew")
+        self.capture_reference_button.grid(row=0, column=0, sticky="ew")
 
         self.clear_reference_button = Button(
             self.button_frame,
@@ -76,8 +83,16 @@ class PCBQualityAssuranceApp:
         )
         self.clear_reference_button.grid(row=0, column=1, sticky="ew")
 
+        self.upload_file_button = Button(
+            self.button_frame,
+            text="Upload Reference",
+            command=self.upload_reference,
+        )
+        self.upload_file_button.grid(row=0, column=2, sticky="ew")
+
         self.button_frame.grid_columnconfigure(0, weight=1)
         self.button_frame.grid_columnconfigure(1, weight=1)
+        self.button_frame.grid_columnconfigure(2, weight=1)
 
         self.mode_frame = Frame(self.left_frame)
         self.mode_frame.grid(row=3, column=0, sticky="nswe")
@@ -99,75 +114,120 @@ class PCBQualityAssuranceApp:
         self.difference_radio.grid(row=2, column=0, padx=5, sticky="w")
 
         # Right Frame
-        self.output_display = Label(self.right_frame)
+        self.output_display = Label(
+            self.right_frame,
+        )
         self.output_display.grid(row=0, column=0, sticky="nswe")
 
-    def capture_webcam_stream(self):
-        ret, frame = self.cap.read()
-        if ret:
-            # Convert the captured frame to RGBA
-            opencv_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-            captured_image = PILImage.fromarray(opencv_image)
+        # Schedule the initial display update
+        self.root.after(10, self.update_display)
 
-            # Get the dimensions of the left frame
-            left_frame_width = self.left_frame.winfo_width() - 5
+    def capture_webcam(self):
+        while self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if ret:
+                self.current_frame = frame
 
-            # Calculate the height maintaining the 16:9 aspect ratio
-            left_frame_height = int(left_frame_width * 9 / 16)
+    def update_display(self):
+        if self.current_frame is not None:
+            try:
+                self.update_input_display()
+                self.update_reference_display()
+                self.update_output_display()
+            except Exception as e:
+                print(f"Error updating display: {e}")
 
-            # Resize the captured image to fit within the left frame dimensions
-            resized_image = captured_image.resize((left_frame_width, left_frame_height))
-            photo_image = ImageTk.PhotoImage(image=resized_image)
+        # Schedule the next display update
+        self.root.after(10, self.update_display)
 
-            # Update the input display with the resized image
-            self.input_display.photo_image = photo_image
-            self.input_display.configure(image=photo_image)
+    def update_input_display(self):
+        target_size = (
+            self.left_frame.winfo_width() - 5,
+            int((self.left_frame.winfo_width() - 5) * 9 / 16),
+        )
+        converted_frame = self.convert_frame_to_photoimage(
+            self.current_frame, target_size
+        )
+        self.input_display.photo_image = converted_frame
+        self.input_display.configure(image=converted_frame)
 
-            # Schedule the next frame capture
-            self.root.after(10, self.capture_webcam_stream)
+    def update_reference_display(self):
+        target_size = (
+            self.left_frame.winfo_width() - 5,
+            int((self.left_frame.winfo_width() - 5) * 9 / 16),
+        )
+        if self.reference_image is None:
+            converted_frame = self.convert_frame_to_photoimage(
+                self.current_frame, target_size
+            )
+            self.reference_display.photo_image = converted_frame
+            self.reference_display.configure(image=converted_frame)
+            return
 
-            if self.reference_image is None:
-                self.reference_display.photo_image = photo_image
-                self.reference_display.configure(image=photo_image)
+        converted_frame = self.convert_frame_to_photoimage(
+            self.reference_image, target_size
+        )
+        self.reference_display.photo_image = converted_frame
+        self.reference_display.configure(image=converted_frame)
+
+    def update_output_display(self):
+        target_size = (
+            self.right_frame.winfo_width() - 5,
+            int((self.right_frame.winfo_width() - 5) * 9 / 16),
+        )
+        if self.reference_image is None:
+            self.output_display.configure(image=None)
+            self.output_display.photo_image = None
+            return
+
+        frame = self.current_frame
+        try:
+            if self.mode.get() == "overlay":
+                output = self.process_overlay(frame, self.reference_image)
+            elif self.mode.get() == "difference":
+                output = self.process_difference(frame, self.reference_image)
             else:
-                # Display output with the current frame
-                self.display_output(frame)
+                output = frame
+        except Exception as e:
+            print(f"Error processing image: {e}")
 
-    def display_output(self, frame):
-        right_frame_width = self.right_frame.winfo_width() - 5
-        right_frame_height = int(right_frame_width * 9 / 16)
-
-        if self.mode.get() == "overlay":
-            output = self.process_overlay(frame, self.reference_image)
-        elif self.mode.get() == "difference":
-            output = self.process_difference(frame, self.reference_image)
-        else:
-            output = frame
-
-        output_resized = cv2.resize(output, (right_frame_width, right_frame_height))
-        output_PIL = PILImage.fromarray(cv2.cvtColor(output_resized, cv2.COLOR_BGR2RGB))
-        output_PhotoImage = ImageTk.PhotoImage(image=output_PIL)
-
-        # Update the output display
-        self.output_display.photo_image = output_PhotoImage
-        self.output_display.configure(image=output_PhotoImage)
-
-        # Schedule the next update
-        self.root.after(10, self.display_output, frame)
+        converted_frame = self.convert_frame_to_photoimage(output, target_size)
+        self.output_display.photo_image = converted_frame
+        self.output_display.configure(image=converted_frame)
 
     def process_overlay(self, input, reference, transparency=0.5):
         return cv2.addWeighted(input, transparency, reference, transparency, 0)
-    
-    def process_difference(self, input, reference):
-        return cv2.absdiff(input, reference)
 
-    def take_reference(self):
-        ret, frame = self.cap.read()
-        if ret:
-            self.reference_image = frame
+    def process_difference(self, input, reference):
+        return 255 - cv2.absdiff(input, reference)
+
+    def capture_reference(self):
+        if self.current_frame is not None:
+            self.reference_image = self.current_frame
+            print("Reference image captured")
 
     def clear_reference(self):
         self.reference_image = None
+
+    def upload_reference(self):
+        file_path = filedialog.askopenfilename(
+            filetypes=[("Image Files", "*.jpg;*.jpeg;*.png;*.bmp;*.tiff")]
+        )
+        if file_path:
+            self.reference_image = cv2.imread(file_path)
+            print("Reference image uploaded")
+            self.update_reference_display()
+
+    def convert_frame_to_photoimage(self, frame, target_size):
+        resized_frame = cv2.resize(frame, target_size)
+        converted_frame = ImageTk.PhotoImage(
+            image=PILImage.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
+        )
+        return converted_frame
+
+    def on_closing(self):
+        self.cap.release()
+        self.root.destroy()
 
 
 if __name__ == "__main__":
