@@ -1,3 +1,4 @@
+import os
 import cv2
 from PIL import Image as PILImage, ImageTk
 from tkinter import *
@@ -13,11 +14,11 @@ class PCBQualityAssuranceApp:
         self.window_width = 1600
         self.window_height = 900
         self.root.geometry(f"{self.window_width}x{self.window_height}")
-        self.root.config(bg="skyblue")
+        self.root.config(bg="lightgray")
         root.minsize(800, 600)
 
-        self.reference_image = None  # Variable to store the reference image
-        self.current_frame = None  # Variable to store the current frame
+        self.reference_image = None
+        self.current_frame = None
 
         self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Changed to use default camera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
@@ -62,14 +63,18 @@ class PCBQualityAssuranceApp:
         self.right_frame.grid_propagate(False)
 
         # Left Frame
+        self.left_frame.grid_rowconfigure(0, weight=1)
+        self.left_frame.grid_rowconfigure(1, weight=1)
+        self.left_frame.grid_rowconfigure(2, weight=1)
+
         self.input_display = Label(self.left_frame)
-        self.input_display.grid(row=0, column=0, sticky="nswe")
+        self.input_display.grid(row=0, column=0, sticky="n")
 
         self.reference_display = Label(self.left_frame)
-        self.reference_display.grid(row=1, column=0, sticky="nswe")
+        self.reference_display.grid(row=1, column=0, sticky="n")
 
         self.button_frame = Frame(self.left_frame)
-        self.button_frame.grid(row=2, column=0, sticky="nswe")
+        self.button_frame.grid(row=2, column=0, sticky="n")
 
         self.capture_reference_button = Button(
             self.button_frame, text="Capture Reference", command=self.capture_reference
@@ -95,7 +100,7 @@ class PCBQualityAssuranceApp:
         self.button_frame.grid_columnconfigure(2, weight=1)
 
         self.mode_frame = Frame(self.left_frame)
-        self.mode_frame.grid(row=3, column=0, sticky="nswe")
+        self.mode_frame.grid(row=3, column=0, sticky="n")
 
         self.mode = StringVar(value="none")
 
@@ -114,6 +119,8 @@ class PCBQualityAssuranceApp:
         self.difference_radio.grid(row=2, column=0, padx=5, sticky="w")
 
         # Right Frame
+        self.right_frame.grid_rowconfigure(0, weight=1)
+        self.right_frame.grid_columnconfigure(0, weight=1)
         self.output_display = Label(
             self.right_frame,
         )
@@ -171,6 +178,10 @@ class PCBQualityAssuranceApp:
         self.reference_display.configure(image=converted_frame)
 
     def update_output_display(self):
+        if self.reference_image is None:
+            self.output_display.photo_image = None
+            self.output_display.configure(image=None)
+            return
         target_size = (
             self.right_frame.winfo_width() - 5,
             int((self.right_frame.winfo_width() - 5) * 9 / 16),
