@@ -14,8 +14,9 @@ class PCBQualityAssuranceApp:
         self.window_width = 1600
         self.window_height = 900
         self.root.geometry(f"{self.window_width}x{self.window_height}")
-        self.root.config(bg="lightgray")
-        root.minsize(800, 600)
+        self.root.minsize(1000, 600)
+        # root.resizable(False, False)
+        self.root.config()
 
         self.reference_image = None
         self.current_frame = None
@@ -41,90 +42,81 @@ class PCBQualityAssuranceApp:
         # Configure grid layout
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
-        self.root.grid_columnconfigure(1, weight=1)
+        self.root.grid_columnconfigure(1, weight=2)
 
         # Create frames
-        self.left_frame = Frame(
-            self.root,
-            bg="grey",
-            width=int(self.window_width * 0.35),
-            height=self.window_height,
-        )
-        self.left_frame.grid(row=0, column=0, padx=5, pady=10, sticky="nswe")
-        self.left_frame.grid_propagate(False)
+        self.left_frame = Frame(self.root, bg="azure2")
+        self.left_frame.grid(row=0, column=0, sticky="nswe")
+        self.left_frame.pack_propagate(False)
 
-        self.right_frame = Frame(
-            self.root,
-            bg="grey",
-            width=int(self.window_width * 0.65),
-            height=self.window_height,
-        )
-        self.right_frame.grid(row=0, column=1, padx=5, pady=10, sticky="nswe")
-        self.right_frame.grid_propagate(False)
+        self.right_frame = Frame(self.root, bg="azure3")
+        self.right_frame.grid(row=0, column=1, sticky="nswe")
+        self.right_frame.pack_propagate(False)
 
         # Left Frame
-        self.left_frame.grid_rowconfigure(0, weight=1)
-        self.left_frame.grid_rowconfigure(1, weight=1)
-        self.left_frame.grid_rowconfigure(2, weight=1)
 
-        self.input_display = Label(self.left_frame)
-        self.input_display.grid(row=0, column=0, sticky="n")
+        ## Input Frame
+        self.input_label = Label(self.left_frame, text="Input Image", bg="azure1")
+        self.input_label.pack(fill="x", padx=5, pady=(5, 0))
+        self.input_canvas = Canvas(self.left_frame)
+        self.input_canvas.pack(fill="x", padx=5, pady=(5, 0))
 
-        self.reference_display = Label(self.left_frame)
-        self.reference_display.grid(row=1, column=0, sticky="n")
+        self.reference_label = Label(
+            self.left_frame, text="Reference Image", bg="azure1"
+        )
+        self.reference_label.pack(fill="x", padx=5, pady=(5, 0))
+        self.reference_canvas = Canvas(self.left_frame)
+        self.reference_canvas.pack(fill="x", padx=5, pady=(5, 0))
 
+        ## Button Frame
         self.button_frame = Frame(self.left_frame)
-        self.button_frame.grid(row=2, column=0, sticky="n")
+        self.button_frame.pack(fill="x", padx=5, pady=(5, 0))
 
         self.capture_reference_button = Button(
-            self.button_frame, text="Capture Reference", command=self.capture_reference
+            self.button_frame,
+            text="Capture Reference",
+            command=self.capture_reference,
+            bg="azure1",
         )
-        self.capture_reference_button.grid(row=0, column=0, sticky="ew")
+        self.capture_reference_button.pack(side=LEFT, expand=True, fill="both")
 
         self.clear_reference_button = Button(
             self.button_frame,
             text="Clear Reference",
             command=self.clear_reference,
+            bg="azure1",
         )
-        self.clear_reference_button.grid(row=0, column=1, sticky="ew")
+        self.clear_reference_button.pack(side=LEFT, expand=True, fill="both")
 
         self.upload_file_button = Button(
             self.button_frame,
             text="Upload Reference",
             command=self.upload_reference,
+            bg="azure1",
         )
-        self.upload_file_button.grid(row=0, column=2, sticky="ew")
+        self.upload_file_button.pack(side=LEFT, expand=True, fill="both")
 
-        self.button_frame.grid_columnconfigure(0, weight=1)
-        self.button_frame.grid_columnconfigure(1, weight=1)
-        self.button_frame.grid_columnconfigure(2, weight=1)
-
-        self.mode_frame = Frame(self.left_frame)
-        self.mode_frame.grid(row=3, column=0, sticky="n")
-
+        ## Mode Frame
+        self.mode_label = Label(self.left_frame, text="Output Mode", bg="azure1")
+        self.mode_label.pack(fill="x", padx=5, pady=(5, 0))
         self.mode = StringVar(value="none")
+        modes = (("None", "none"), ("Overlay", "overlay"), ("Difference", "difference"))
 
-        self.none_radio = Radiobutton(
-            self.mode_frame, text="None", variable=self.mode, value="none"
-        )
-        self.none_radio.grid(row=0, column=0, padx=5, sticky="w")
-        self.overlay_radio = Radiobutton(
-            self.mode_frame, text="Overlay", variable=self.mode, value="overlay"
-        )
-        self.overlay_radio.grid(row=1, column=0, padx=5, sticky="w")
-
-        self.difference_radio = Radiobutton(
-            self.mode_frame, text="Difference", variable=self.mode, value="difference"
-        )
-        self.difference_radio.grid(row=2, column=0, padx=5, sticky="w")
+        for mode_text, mode_value in modes:
+            r = Radiobutton(
+                self.left_frame, text=mode_text, value=mode_value, variable=self.mode, bg="azure1"
+            )
+            r.pack(fill="x", padx=5)
 
         # Right Frame
-        self.right_frame.grid_rowconfigure(0, weight=1)
-        self.right_frame.grid_columnconfigure(0, weight=1)
-        self.output_display = Label(
-            self.right_frame,
+        self.output_label = Label(self.right_frame, text="Output Image", bg="azure2").pack(
+            fill="x", padx=5, pady=(5, 0)
         )
-        self.output_display.grid(row=0, column=0, sticky="nswe")
+        self.output_canvas = Canvas(self.right_frame, bg="azure2")
+        self.output_canvas.pack(fill="both", padx=5, pady=5)
+
+        self.root.bind("<Configure>", self.resize_all_canvases)
+        self.resize_all_canvases(None)
 
         # Schedule the initial display update
         self.root.after(10, self.update_display)
@@ -134,6 +126,19 @@ class PCBQualityAssuranceApp:
             ret, frame = self.cap.read()
             if ret:
                 self.current_frame = frame
+
+    def resize_all_canvases(self, event):
+        # Calculate canvas dimensions with 16:9 aspect ratio
+        def resize_canvas(canvas, frame):
+            frame_width = frame.winfo_width() - 10  # Adjust for padding
+            canvas_width = frame_width
+            canvas_height = int(canvas_width * 9 / 16)
+            canvas.config(width=canvas_width, height=canvas_height)
+
+        # Resize each canvas
+        resize_canvas(self.output_canvas, self.right_frame)
+        resize_canvas(self.input_canvas, self.left_frame)
+        resize_canvas(self.reference_canvas, self.left_frame)
 
     def update_display(self):
         if self.current_frame is not None:
@@ -148,47 +153,40 @@ class PCBQualityAssuranceApp:
         self.root.after(10, self.update_display)
 
     def update_input_display(self):
-        target_size = (
-            self.left_frame.winfo_width() - 5,
-            int((self.left_frame.winfo_width() - 5) * 9 / 16),
-        )
+        canvas_width = self.input_canvas.winfo_width()
+        canvas_height = self.input_canvas.winfo_height()
+        target_size = (canvas_width, canvas_height)
         converted_frame = self.convert_frame_to_photoimage(
             self.current_frame, target_size
         )
-        self.input_display.photo_image = converted_frame
-        self.input_display.configure(image=converted_frame)
+        self.input_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+        self.input_canvas.image = converted_frame
 
     def update_reference_display(self):
-        target_size = (
-            self.left_frame.winfo_width() - 5,
-            int((self.left_frame.winfo_width() - 5) * 9 / 16),
-        )
+        canvas_width = self.reference_canvas.winfo_width()
+        canvas_height = self.reference_canvas.winfo_height()
+        target_size = (canvas_width, canvas_height)
         if self.reference_image is None:
             converted_frame = self.convert_frame_to_photoimage(
                 self.current_frame, target_size
             )
-            self.reference_display.photo_image = converted_frame
-            self.reference_display.configure(image=converted_frame)
+            self.reference_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+            self.reference_canvas.image = converted_frame
             return
 
         converted_frame = self.convert_frame_to_photoimage(
             self.reference_image, target_size
         )
-        self.reference_display.photo_image = converted_frame
-        self.reference_display.configure(image=converted_frame)
+        self.reference_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+        self.reference_canvas.image = converted_frame
 
     def update_output_display(self):
+        canvas_width = self.output_canvas.winfo_width()
+        canvas_height = self.output_canvas.winfo_height()
+        target_size = (canvas_width, canvas_height)
         if self.reference_image is None:
-            self.output_display.photo_image = None
-            self.output_display.configure(image=None)
-            return
-        target_size = (
-            self.right_frame.winfo_width() - 5,
-            int((self.right_frame.winfo_width() - 5) * 9 / 16),
-        )
-        if self.reference_image is None:
-            self.output_display.configure(image=None)
-            self.output_display.photo_image = None
+            self.output_canvas.create_image(0, 0, anchor=NW, image=None)
+            self.output_canvas.image = None
             return
 
         frame = self.current_frame
@@ -203,8 +201,8 @@ class PCBQualityAssuranceApp:
             print(f"Error processing image: {e}")
 
         converted_frame = self.convert_frame_to_photoimage(output, target_size)
-        self.output_display.photo_image = converted_frame
-        self.output_display.configure(image=converted_frame)
+        self.output_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+        self.output_canvas.image = converted_frame
 
     def process_overlay(self, input, reference, transparency=0.5):
         return cv2.addWeighted(input, transparency, reference, transparency, 0)
