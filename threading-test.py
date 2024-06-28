@@ -7,6 +7,7 @@ from skimage.metrics import structural_similarity
 import threading
 import queue
 
+
 class PCBQualityAssuranceApp:
     def __init__(self, root):
         print("Starting App")
@@ -165,6 +166,8 @@ class PCBQualityAssuranceApp:
         resize_canvas(self.input_canvas, self.left_frame)
         resize_canvas(self.reference_canvas, self.left_frame)
 
+    # ------------------------- Display Update Functions ------------------------- #
+
     def update_display(self):
         if self.current_frame is not None:
             try:
@@ -214,9 +217,13 @@ class PCBQualityAssuranceApp:
             self.output_canvas.image = None
             return
 
-        converted_frame = self.convert_frame_to_photoimage(self.processed_frame, target_size)
+        converted_frame = self.convert_frame_to_photoimage(
+            self.processed_frame, target_size
+        )
         self.output_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
         self.output_canvas.image = converted_frame
+
+    # ------------------------- Image Processing Functions ------------------------- #
 
     def process_output(self):
         while True:
@@ -242,7 +249,7 @@ class PCBQualityAssuranceApp:
             return self.ssim_image(self.reference_image, frame)
 
         return frame
-    
+
     def overlay_images(self, reference_image, current_frame):
         alpha = 0.5
         return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
@@ -253,14 +260,12 @@ class PCBQualityAssuranceApp:
     def ssim_image(self, reference_image, current_frame):
         gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
         gray_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
-        _, diff = structural_similarity(
-            gray_reference, gray_frame, full=True
-        )
+        _, diff = structural_similarity(gray_reference, gray_frame, full=True)
         diff = (diff * 255).astype("uint8")
         diff_color = cv2.cvtColor(diff, cv2.COLOR_GRAY2BGR)
         return diff_color
-    
-    # Button functions
+
+    # ----------------------------- Button Functions ----------------------------- #
 
     def capture_reference(self):
         self.reference_image = self.current_frame.copy()
@@ -273,6 +278,8 @@ class PCBQualityAssuranceApp:
         if file_path:
             self.reference_image = cv2.imread(file_path)
 
+    # ------------------------------ Other Functions ----------------------------- #
+
     def convert_frame_to_photoimage(self, frame, target_size):
         if frame is None:
             return None
@@ -282,11 +289,10 @@ class PCBQualityAssuranceApp:
         pil_image = PILImage.fromarray(rgb_frame)
         return ImageTk.PhotoImage(image=pil_image)
 
-
-
     def on_closing(self):
         self.cap.release()
         self.root.destroy()
+
 
 if __name__ == "__main__":
     root = Tk()
