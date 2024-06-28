@@ -5,7 +5,7 @@ from tkinter import *
 from tkinter import filedialog
 from skimage.metrics import structural_similarity
 import threading
-
+import queue
 
 class PCBQualityAssuranceApp:
     def __init__(self, root):
@@ -21,6 +21,8 @@ class PCBQualityAssuranceApp:
 
         self.reference_image = None
         self.current_frame = None
+        self.processed_frame = None
+        self.frame_queue = queue.Queue(maxsize=1)  # Queue to hold frames for processing
 
         self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Changed to use default camera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
@@ -35,6 +37,11 @@ class PCBQualityAssuranceApp:
         self.capture_thread = threading.Thread(target=self.capture_webcam)
         self.capture_thread.daemon = True
         self.capture_thread.start()
+
+        # Start the image processing thread
+        self.processing_thread = threading.Thread(target=self.process_output)
+        self.processing_thread.daemon = True
+        self.processing_thread.start()
 
         # Release the video capture when the app closes
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -135,6 +142,15 @@ class PCBQualityAssuranceApp:
             ret, frame = self.cap.read()
             if ret:
                 self.current_frame = frame
+                # Only put the latest frame into the queue, discard the old one if the queue is full
+                if not self.frame_queue.full():
+                    self.frame_queue.put(frame)
+                else:
+                    try:
+                        self.frame_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    self.frame_queue.put(frame)
 
     def resize_all_canvases(self, event):
         def resize_canvas(canvas, frame):
@@ -193,72 +209,84 @@ class PCBQualityAssuranceApp:
         canvas_width = self.output_canvas.winfo_width()
         canvas_height = self.output_canvas.winfo_height()
         target_size = (canvas_width, canvas_height)
-        if self.reference_image is None:
+        if self.processed_frame is None:
             self.output_canvas.create_image(0, 0, anchor=NW, image=None)
             self.output_canvas.image = None
             return
 
-        frame = self.current_frame
-        mode = self.mode.get()
-        try:
-            if mode == "overlay":
-                output = self.process_overlay(frame, self.reference_image)
-            elif mode == "difference":
-                output = self.process_difference(frame, self.reference_image)
-            elif mode == "ssim":
-                output = self.process_ssim(frame, self.reference_image)
-            else:
-                output = frame
-        except Exception as e:
-            print(f"Error processing image: {e}")
-
-        converted_frame = self.convert_frame_to_photoimage(output, target_size)
+        converted_frame = self.convert_frame_to_photoimage(self.processed_frame, target_size)
         self.output_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
         self.output_canvas.image = converted_frame
 
-    def process_overlay(self, input, reference, transparency=0.5):
-        return cv2.addWeighted(input, transparency, reference, transparency, 0)
+    def process_output(self):
+        while True:
+            frame = self.frame_queue.get()  # Wait for a frame to be available
+            if frame is not None:
+                try:
+                    processed_frame = self.process_current_frame(frame)
+                    self.processed_frame = processed_frame
+                except Exception as e:
+                    print(f"Error processing output frame: {e}")
 
-    def process_difference(self, input, reference):
-        return 255 - cv2.absdiff(input, reference)
+    def process_current_frame(self, frame):
+        mode = self.mode.get()
 
-    def process_ssim(self, input, reference):
+        if self.reference_image is None or mode == "none":
+            return frame
+
+        if mode == "overlay":
+            return self.overlay_images(self.reference_image, frame)
+        elif mode == "difference":
+            return self.difference_image(self.reference_image, frame)
+        elif mode == "ssim":
+            return self.ssim_image(self.reference_image, frame)
+
+        return frame
+    
+    def overlay_images(self, reference_image, current_frame):
+        alpha = 0.5
+        return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
+
+    def difference_image(self, reference_image, current_frame):
+        return cv2.absdiff(reference_image, current_frame)
+
+    def ssim_image(self, reference_image, current_frame):
+        gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
+        gray_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
         _, diff = structural_similarity(
-            cv2.cvtColor(input, cv2.COLOR_BGR2GRAY),
-            cv2.cvtColor(reference, cv2.COLOR_BGR2GRAY),
-            full=True,
+            gray_reference, gray_frame, full=True
         )
         diff = (diff * 255).astype("uint8")
-        return diff
+        diff_color = cv2.cvtColor(diff, cv2.COLOR_GRAY2BGR)
+        return diff_color
+    
+    # Button functions
 
     def capture_reference(self):
-        if self.current_frame is not None:
-            self.reference_image = self.current_frame
-            print("Reference image captured")
+        self.reference_image = self.current_frame.copy()
 
     def clear_reference(self):
         self.reference_image = None
 
     def upload_reference(self):
-        file_path = filedialog.askopenfilename(
-            filetypes=[("Image Files", "*.jpg;*.jpeg;*.png;*.bmp;*.tiff")]
-        )
+        file_path = filedialog.askopenfilename()
         if file_path:
             self.reference_image = cv2.imread(file_path)
-            print("Reference image uploaded")
-            self.update_reference_display()
 
     def convert_frame_to_photoimage(self, frame, target_size):
+        if frame is None:
+            return None
+
         resized_frame = cv2.resize(frame, target_size)
-        converted_frame = ImageTk.PhotoImage(
-            image=PILImage.fromarray(cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB))
-        )
-        return converted_frame
+        rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+        pil_image = PILImage.fromarray(rgb_frame)
+        return ImageTk.PhotoImage(image=pil_image)
+
+
 
     def on_closing(self):
         self.cap.release()
         self.root.destroy()
-
 
 if __name__ == "__main__":
     root = Tk()
