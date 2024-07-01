@@ -1,7 +1,9 @@
 import os
 import cv2
 from PIL import Image as PILImage, ImageTk
-from tkinter import *
+
+# from tkinter import *
+import tkinter as tk
 from tkinter import filedialog
 from skimage.metrics import structural_similarity
 import threading
@@ -27,7 +29,7 @@ class PCBQualityAssuranceApp:
         self.frame_queue = queue.Queue(maxsize=1)  # Queue to hold frames for processing
         self.flicker_state = True
 
-        self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Changed to use default camera
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Changed to use default camera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
         print("Initialized Webcam")
@@ -56,11 +58,11 @@ class PCBQualityAssuranceApp:
         self.root.grid_columnconfigure(1, weight=3)
 
         # Create frames
-        self.left_frame = Frame(self.root, bg="azure2")
+        self.left_frame = tk.Frame(self.root, bg="azure2")
         self.left_frame.grid(row=0, column=0, sticky="nswe")
         self.left_frame.pack_propagate(False)
 
-        self.right_frame = Frame(self.root, bg="azure2")
+        self.right_frame = tk.Frame(self.root, bg="azure2")
         self.right_frame.grid(row=0, column=1, sticky="nswe")
         self.right_frame.pack_propagate(False)
 
@@ -69,50 +71,50 @@ class PCBQualityAssuranceApp:
         # ---------------------------------------------------------------------------- #
 
         # ---------------------------------- Cameras --------------------------------- #
-        self.input_label = Label(self.left_frame, text="Input Image", bg="azure1")
+        self.input_label = tk.Label(self.left_frame, text="Input Image", bg="azure1")
         self.input_label.pack(fill="x", padx=5, pady=(5, 0))
-        self.input_canvas = Canvas(self.left_frame)
+        self.input_canvas = tk.Canvas(self.left_frame)
         self.input_canvas.pack(fill="x", padx=5, pady=(5, 0))
 
-        self.reference_label = Label(
+        self.reference_label = tk.Label(
             self.left_frame, text="Reference Image", bg="azure1"
         )
         self.reference_label.pack(fill="x", padx=5, pady=(5, 0))
-        self.reference_canvas = Canvas(self.left_frame)
+        self.reference_canvas = tk.Canvas(self.left_frame)
         self.reference_canvas.pack(fill="x", padx=5, pady=(5, 0))
 
         # ---------------------------------- Buttons --------------------------------- #
-        self.button_frame = Frame(self.left_frame)
+        self.button_frame = tk.Frame(self.left_frame)
         self.button_frame.pack(fill="x", padx=5, pady=(5, 0))
 
-        self.capture_reference_button = Button(
+        self.capture_reference_button = tk.Button(
             self.button_frame,
             text="Capture Reference",
             command=self.capture_reference,
             bg="azure1",
         )
-        self.capture_reference_button.pack(side=LEFT, expand=True, fill="both")
+        self.capture_reference_button.pack(side=tk.LEFT, expand=True, fill="both")
 
-        self.clear_reference_button = Button(
+        self.clear_reference_button = tk.Button(
             self.button_frame,
             text="Clear Reference",
             command=self.clear_reference,
             bg="azure1",
         )
-        self.clear_reference_button.pack(side=LEFT, expand=True, fill="both")
+        self.clear_reference_button.pack(side=tk.LEFT, expand=True, fill="both")
 
-        self.upload_file_button = Button(
+        self.upload_file_button = tk.Button(
             self.button_frame,
             text="Upload Reference",
             command=self.upload_reference,
             bg="azure1",
         )
-        self.upload_file_button.pack(side=LEFT, expand=True, fill="both")
+        self.upload_file_button.pack(side=tk.LEFT, expand=True, fill="both")
 
         # ---------------------------- Mode Radio Buttons ---------------------------- #
-        self.mode_label = Label(self.left_frame, text="Output Mode", bg="azure1")
+        self.mode_label = tk.Label(self.left_frame, text="Output Mode", bg="azure1")
         self.mode_label.pack(fill="x", padx=5, pady=(5, 0))
-        self.mode = StringVar(value="none")
+        self.mode = tk.StringVar(value="none")
         modes = (
             ("None", "none"),
             ("Overlay", "overlay"),
@@ -122,7 +124,7 @@ class PCBQualityAssuranceApp:
         )
 
         for mode_text, mode_value in modes:
-            r = Radiobutton(
+            r = tk.Radiobutton(
                 self.left_frame,
                 text=mode_text,
                 value=mode_value,
@@ -131,12 +133,41 @@ class PCBQualityAssuranceApp:
             )
             r.pack(fill="x", padx=5)
 
+        # ------------------------- Preprocessing Checkboxes ------------------------- #
+        self.preprocess_label = tk.Label(
+            self.left_frame, text="Preprocessing Options", bg="azure1"
+        )
+        self.preprocess_label.pack(fill="x", padx=5, pady=(5, 0))
+
+        self.homography_var = tk.IntVar()
+        self.histogram_var = tk.IntVar()
+
+        self.homography_checkbutton = tk.Checkbutton(
+            self.left_frame,
+            text="Homography",
+            variable=self.homography_var,
+            onvalue=1,
+            offvalue=0,
+            bg="azure1",
+        )
+        self.homography_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
+
+        self.histogram_checkbutton = tk.Checkbutton(
+            self.left_frame,
+            text="Histogram Matching",
+            variable=self.histogram_var,
+            onvalue=1,
+            offvalue=0,
+            bg="azure1",
+        )
+        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
+
         # ---------------------------------------------------------------------------- #
         #                                  Right Frame                                 #
         # ---------------------------------------------------------------------------- #
-        self.output_label = Label(self.right_frame, text="Output Image", bg="azure1")
+        self.output_label = tk.Label(self.right_frame, text="Output Image", bg="azure1")
         self.output_label.pack(fill="x", padx=5, pady=(5, 0))
-        self.output_canvas = Canvas(self.right_frame, bg="azure1")
+        self.output_canvas = tk.Canvas(self.right_frame, bg="azure1")
         self.output_canvas.pack(fill="both", padx=5, pady=5)
 
         self.root.bind("<Configure>", self.resize_all_canvases)
@@ -194,7 +225,7 @@ class PCBQualityAssuranceApp:
         converted_frame = self.convert_frame_to_photoimage(
             self.current_frame, target_size
         )
-        self.input_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+        self.input_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
         self.input_canvas.image = converted_frame
 
     def update_reference_display(self):
@@ -205,29 +236,32 @@ class PCBQualityAssuranceApp:
             converted_frame = self.convert_frame_to_photoimage(
                 self.current_frame, target_size
             )
-            self.reference_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+            self.reference_canvas.create_image(
+                0, 0, anchor=tk.NW, image=converted_frame
+            )
             self.reference_canvas.image = converted_frame
             return
 
         converted_frame = self.convert_frame_to_photoimage(
             self.reference_image, target_size
         )
-        self.reference_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+        self.reference_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
         self.reference_canvas.image = converted_frame
 
     def update_output_display(self):
         canvas_width = self.output_canvas.winfo_width()
         canvas_height = self.output_canvas.winfo_height()
         target_size = (canvas_width, canvas_height)
-        if self.processed_frame is None:
-            self.output_canvas.create_image(0, 0, anchor=NW, image=None)
+
+        if self.processed_frame is None or self.reference_image is None:
+            self.output_canvas.create_image(0, 0, anchor=tk.NW, image=None)
             self.output_canvas.image = None
             return
 
         converted_frame = self.convert_frame_to_photoimage(
             self.processed_frame, target_size
         )
-        self.output_canvas.create_image(0, 0, anchor=NW, image=converted_frame)
+        self.output_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
         self.output_canvas.image = converted_frame
 
     # ------------------------- Image Processing Functions ------------------------- #
@@ -243,6 +277,14 @@ class PCBQualityAssuranceApp:
                     print(f"Error processing output frame: {e}")
 
     def process_current_frame(self, frame):
+
+        if self.homography_var.get() == 1:
+
+            pass
+
+        if self.histogram_var.get() == 1:
+            pass
+
         mode = self.mode.get()
         if mode == "overlay":
             output = self.overlay_images(self.reference_image, frame)
@@ -307,6 +349,6 @@ class PCBQualityAssuranceApp:
 
 
 if __name__ == "__main__":
-    root = Tk()
+    root = tk.Tk()
     app = PCBQualityAssuranceApp(root)
     root.mainloop()
