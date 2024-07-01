@@ -1,11 +1,14 @@
 import os
 import cv2
 from PIL import Image as PILImage, ImageTk
+import numpy as np
 
 # from tkinter import *
 import tkinter as tk
 from tkinter import filedialog
 from skimage.metrics import structural_similarity
+from skimage.exposure import match_histograms
+
 import threading
 import queue
 import time
@@ -29,7 +32,7 @@ class PCBQualityAssuranceApp:
         self.frame_queue = queue.Queue(maxsize=1)  # Queue to hold frames for processing
         self.flicker_state = True
 
-        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Changed to use default camera
+        self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Changed to use default camera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
         print("Initialized Webcam")
@@ -139,18 +142,18 @@ class PCBQualityAssuranceApp:
         )
         self.preprocess_label.pack(fill="x", padx=5, pady=(5, 0))
 
-        self.homography_var = tk.IntVar()
+        self.align_images_var = tk.IntVar()
         self.histogram_var = tk.IntVar()
 
-        self.homography_checkbutton = tk.Checkbutton(
+        self.align_images_checkbutton = tk.Checkbutton(
             self.left_frame,
-            text="Homography",
-            variable=self.homography_var,
+            text="Align Images",
+            variable=self.align_images_var,
             onvalue=1,
             offvalue=0,
             bg="azure1",
         )
-        self.homography_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
+        self.align_images_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
 
         self.histogram_checkbutton = tk.Checkbutton(
             self.left_frame,
@@ -160,7 +163,7 @@ class PCBQualityAssuranceApp:
             offvalue=0,
             bg="azure1",
         )
-        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
+        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
 
         # ---------------------------------------------------------------------------- #
         #                                  Right Frame                                 #
@@ -278,16 +281,12 @@ class PCBQualityAssuranceApp:
 
     def process_current_frame(self, frame):
 
-        if self.homography_var.get() == 1:
-            # TODO: Apply homography transformation
-            # Match keypoints between the reference image and the current frame
-            # Compute the homography matrix and stuff
+        if self.align_images_var.get() == 1:
+            frame = self.align_images(self.reference_image, frame)
             pass
 
         if self.histogram_var.get() == 1:
-            # TODO: Apply histogram transformation
-            # Do histogram matching
-            pass
+            frame = self.histogram_matching(self.reference_image, frame)
 
         mode = self.mode.get()
         if mode == "overlay":
@@ -302,6 +301,61 @@ class PCBQualityAssuranceApp:
             output = frame
 
         return output
+
+    def align_images(self, reference_image, current_frame, resize_factor=(1.0 / 1.0)):
+
+        # Convert images to grayscale
+        current_frame_gray = cv2.cvtColor(current_frame_rs, cv2.COLOR_BGR2GRAY)
+        reference_image_gray = cv2.cvtColor(reference_image_rs, cv2.COLOR_BGR2GRAY)
+
+        # Resize images
+        reference_image_rs = cv2.resize(
+            reference_image_gray, (0, 0), fx=resize_factor, fy=resize_factor
+        )
+        current_frame_rs = cv2.resize(
+            current_frame_gray, (0, 0), fx=resize_factor, fy=resize_factor
+        )
+
+        sift = cv2.SIFT_create()
+
+        keypoints1, descriptors1 = sift.detectAndCompute(current_frame_rs, None)
+        keypoints2, descriptors2 = sift.detectAndCompute(reference_image_rs, None)
+
+        bf = cv2.BFMatcher()
+        matches = bf.knnMatch(descriptors1, descriptors2, k=2)
+
+        good_matches = []
+        for m, n in matches:
+            if m.distance < 0.75 * n.distance:
+                good_matches.append(m)
+        matches = good_matches
+
+        if len(good_matches) < 4:
+            print("Not enough matches found - {}/{}".format(len(good_matches), 4))
+            return current_frame
+
+        points1 = np.zeros((len(matches), 2), dtype=np.float32)
+        points2 = np.zeros((len(matches), 2), dtype=np.float32)
+
+        for i, match in enumerate(matches):
+            points1[i, :] = keypoints1[match.queryIdx].pt
+            points2[i, :] = keypoints2[match.trainIdx].pt
+
+        H, mask = cv2.findHomography(points1, points2, cv2.RANSAC)
+
+        if H is None:
+            print("Homography calculation failed.")
+            return current_frame
+
+        # Warp the current frame to match the reference image
+        aligned_frame = cv2.warpPerspective(
+            current_frame, H, (reference_image.shape[1], reference_image.shape[0])
+        )
+
+        return aligned_frame
+
+    def histogram_matching(self, reference_image, current_frame):
+        return match_histograms(current_frame, reference_image, channel_axis=-1)
 
     def overlay_images(self, reference_image, current_frame):
         alpha = 0.5
