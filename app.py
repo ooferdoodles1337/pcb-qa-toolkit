@@ -302,7 +302,7 @@ class PCBQualityAssuranceApp:
 
         return output
 
-    def align_images(self, reference_image, current_frame, resize_factor=(1.0 / 1.0)):
+    def align_images(self, reference_image, current_frame, resize_factor=(1.0 / 4.0)):
 
         # Convert images to grayscale
         current_frame_gray = cv2.cvtColor(current_frame_rs, cv2.COLOR_BGR2GRAY)
