@@ -32,7 +32,7 @@ class PCBQualityAssuranceApp:
         self.frame_queue = queue.Queue(maxsize=1)  # Queue to hold frames for processing
         self.flicker_state = True
 
-        self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Changed to use default camera
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Changed to use default camera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
         print("Initialized Webcam")
@@ -283,7 +283,6 @@ class PCBQualityAssuranceApp:
 
         if self.align_images_var.get() == 1:
             frame = self.align_images(self.reference_image, frame)
-            pass
 
         if self.histogram_var.get() == 1:
             frame = self.histogram_matching(self.reference_image, frame)
@@ -302,38 +301,22 @@ class PCBQualityAssuranceApp:
 
         return output
 
-    def align_images(self, reference_image, current_frame, resize_factor=(1.0 / 4.0)):
-
+    def align_images(self, reference_image, current_frame):
         # Convert images to grayscale
-        current_frame_gray = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
-        reference_image_gray = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
+        gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
+        gray_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
 
-        # Resize images
-        reference_image_rs = cv2.resize(
-            reference_image_gray, (0, 0), fx=resize_factor, fy=resize_factor
-        )
-        current_frame_rs = cv2.resize(
-            current_frame_gray, (0, 0), fx=resize_factor, fy=resize_factor
-        )
+        # Detect ORB keypoints and descriptors
+        orb = cv2.ORB_create()
+        keypoints1, descriptors1 = orb.detectAndCompute(gray_reference, None)
+        keypoints2, descriptors2 = orb.detectAndCompute(gray_frame, None)
 
-        sift = cv2.SIFT_create()
+        # Match descriptors
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = bf.match(descriptors1, descriptors2)
+        matches = sorted(matches, key=lambda x: x.distance)
 
-        keypoints1, descriptors1 = sift.detectAndCompute(current_frame_rs, None)
-        keypoints2, descriptors2 = sift.detectAndCompute(reference_image_rs, None)
-
-        bf = cv2.BFMatcher()
-        matches = bf.knnMatch(descriptors1, descriptors2, k=2)
-
-        good_matches = []
-        for m, n in matches:
-            if m.distance < 0.75 * n.distance:
-                good_matches.append(m)
-        matches = good_matches
-
-        if len(good_matches) < 4:
-            print("Not enough matches found - {}/{}".format(len(good_matches), 4))
-            return current_frame
-
+        # Extract location of good matches
         points1 = np.zeros((len(matches), 2), dtype=np.float32)
         points2 = np.zeros((len(matches), 2), dtype=np.float32)
 
@@ -341,16 +324,12 @@ class PCBQualityAssuranceApp:
             points1[i, :] = keypoints1[match.queryIdx].pt
             points2[i, :] = keypoints2[match.trainIdx].pt
 
-        H, mask = cv2.findHomography(points1, points2, cv2.RANSAC)
+        # Find homography
+        h, mask = cv2.findHomography(points2, points1, cv2.RANSAC)
 
-        if H is None:
-            print("Homography calculation failed.")
-            return current_frame
-
-        # Warp the current frame to match the reference image
-        aligned_frame = cv2.warpPerspective(
-            current_frame, H, (reference_image.shape[1], reference_image.shape[0])
-        )
+        # Use homography to warp current frame
+        height, width, channels = reference_image.shape
+        aligned_frame = cv2.warpPerspective(current_frame, h, (width, height))
 
         return aligned_frame
 
