@@ -279,10 +279,14 @@ class PCBQualityAssuranceApp:
     def process_current_frame(self, frame):
 
         if self.homography_var.get() == 1:
-
+            # TODO: Apply homography transformation
+            # Match keypoints between the reference image and the current frame
+            # Compute the homography matrix and stuff
             pass
 
         if self.histogram_var.get() == 1:
+            # TODO: Apply histogram transformation
+            # Do histogram matching
             pass
 
         mode = self.mode.get()
