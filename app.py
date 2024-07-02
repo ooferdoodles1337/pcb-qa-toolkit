@@ -2,13 +2,10 @@ import os
 import cv2
 from PIL import Image as PILImage, ImageTk
 import numpy as np
-
-# from tkinter import *
 import tkinter as tk
 from tkinter import filedialog
 from skimage.metrics import structural_similarity
 from skimage.exposure import match_histograms
-
 import threading
 import queue
 import time
@@ -23,7 +20,6 @@ class PCBQualityAssuranceApp:
         self.window_height = 900
         self.root.geometry(f"{self.window_width}x{self.window_height}")
         self.root.minsize(1000, 600)
-        # root.resizable(False, False)
         self.root.config()
 
         self.reference_image = None
@@ -32,7 +28,7 @@ class PCBQualityAssuranceApp:
         self.frame_queue = queue.Queue(maxsize=1)  # Queue to hold frames for processing
         self.flicker_state = True
 
-        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Changed to use default camera
+        self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Changed to use default camera
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
         print("Initialized Webcam")
@@ -142,18 +138,18 @@ class PCBQualityAssuranceApp:
         )
         self.preprocess_label.pack(fill="x", padx=5, pady=(5, 0))
 
-        self.align_images_var = tk.IntVar()
+        self.homography_var = tk.IntVar()
         self.histogram_var = tk.IntVar()
 
-        self.align_images_checkbutton = tk.Checkbutton(
+        self.homography_checkbutton = tk.Checkbutton(
             self.left_frame,
-            text="Align Images",
-            variable=self.align_images_var,
+            text="Homography",
+            variable=self.homography_var,
             onvalue=1,
             offvalue=0,
             bg="azure1",
         )
-        self.align_images_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
+        self.homography_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
 
         self.histogram_checkbutton = tk.Checkbutton(
             self.left_frame,
@@ -163,7 +159,7 @@ class PCBQualityAssuranceApp:
             offvalue=0,
             bg="azure1",
         )
-        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
+        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
 
         # ---------------------------------------------------------------------------- #
         #                                  Right Frame                                 #
@@ -281,11 +277,11 @@ class PCBQualityAssuranceApp:
 
     def process_current_frame(self, frame):
 
-        if self.align_images_var.get() == 1:
-            frame = self.align_images(self.reference_image, frame)
-
         if self.histogram_var.get() == 1:
-            frame = self.histogram_matching(self.reference_image, frame)
+            frame = self.match_colors(self.reference_image, frame)
+
+        if self.homography_var.get() == 1:
+            frame = self.apply_homography(self.reference_image, frame)
 
         mode = self.mode.get()
         if mode == "overlay":
@@ -301,7 +297,53 @@ class PCBQualityAssuranceApp:
 
         return output
 
-    def align_images(self, reference_image, current_frame):
+    def overlay_images(self, reference_image, current_frame):
+        alpha = 0.5
+        return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
+
+    def difference_image(self, reference_image, current_frame):
+        # Compute the absolute difference
+        diff = cv2.absdiff(reference_image, current_frame)
+
+        # Convert the difference image to grayscale
+        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+
+        # Threshold the grayscale difference image to create a binary mask
+        _, binary_mask = cv2.threshold(gray_diff, 30, 255, cv2.THRESH_BINARY)
+
+        # Use morphological operations to remove small regions
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
+        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+
+        # Create a red image for highlighting
+        red_highlight = np.zeros_like(reference_image)
+        red_highlight[:, :] = [0, 0, 255]
+
+        # Use the binary mask to color the differences in red
+        red_diff = cv2.bitwise_and(red_highlight, red_highlight, mask=binary_mask)
+
+        # Combine the red highlights with the original current frame
+        highlighted_diff = cv2.addWeighted(current_frame, 1, red_diff, 1, 0)
+
+        return highlighted_diff
+
+    def ssim_image(self, reference_image, current_frame):
+        gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
+        gray_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+        _, diff = structural_similarity(gray_reference, gray_frame, full=True)
+        diff = (diff * 255).astype("uint8")
+        diff_color = cv2.cvtColor(diff, cv2.COLOR_GRAY2BGR)
+        return diff_color
+
+    def flicker_image(self, reference_image, frame, delay=0.2):
+        time.sleep(delay)
+        self.flicker_state = not self.flicker_state
+        return reference_image if self.flicker_state else frame
+
+    # ------------------------- Feature-Based Homography ------------------------- #
+
+    def apply_homography(self, reference_image, current_frame):
         # Convert images to grayscale
         gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
         gray_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
@@ -333,28 +375,8 @@ class PCBQualityAssuranceApp:
 
         return aligned_frame
 
-    def histogram_matching(self, reference_image, current_frame):
+    def match_colors(self, reference_image, current_frame):
         return match_histograms(current_frame, reference_image, channel_axis=-1)
-
-    def overlay_images(self, reference_image, current_frame):
-        alpha = 0.5
-        return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
-
-    def difference_image(self, reference_image, current_frame):
-        return 255 - cv2.absdiff(reference_image, current_frame)
-
-    def ssim_image(self, reference_image, current_frame):
-        gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
-        gray_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
-        _, diff = structural_similarity(gray_reference, gray_frame, full=True)
-        diff = (diff * 255).astype("uint8")
-        diff_color = cv2.cvtColor(diff, cv2.COLOR_GRAY2BGR)
-        return diff_color
-
-    def flicker_image(self, reference_image, frame, delay=0.1):
-        time.sleep(delay)
-        self.flicker_state = not self.flicker_state
-        return reference_image if self.flicker_state else frame
 
     # ----------------------------- Button Functions ----------------------------- #
 
@@ -378,7 +400,8 @@ class PCBQualityAssuranceApp:
         resized_frame = cv2.resize(frame, target_size)
         rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
         pil_image = PILImage.fromarray(rgb_frame)
-        return ImageTk.PhotoImage(image=pil_image)
+        rotated_image = pil_image.rotate(180)  # Rotate the image 180 degrees
+        return ImageTk.PhotoImage(image=rotated_image)
 
     def on_closing(self):
         self.cap.release()
