@@ -277,12 +277,8 @@ class PCBQualityAssuranceApp:
         it skips processing and waits briefly to avoid high CPU usage.
         """
         while True:
-            if self.reference_image is None:
-                self.processed_frame = None
-                time.sleep(0.01)  # Small delay to prevent high CPU usage
-                continue
             frame = self.frame_queue.get()  # Wait for a frame to be available
-            if frame is not None:
+            if frame is not None and self.reference_image is not None:
                 try:
                     self.processed_frame = self.process_current_frame(frame)
                 except Exception as e:
@@ -415,6 +411,7 @@ class PCBQualityAssuranceApp:
 
     def clear_reference(self):
         self.reference_image = None
+        print("Reference image cleared")
 
     def upload_reference(self):
         file_path = filedialog.askopenfilename()
