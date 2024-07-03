@@ -1,14 +1,17 @@
 import os
-import cv2
-from PIL import Image as PILImage, ImageTk
-import numpy as np
+import time
+import queue
+import threading
 import tkinter as tk
 from tkinter import filedialog
-from skimage.metrics import structural_similarity
+
+import cv2
+import numpy as np
+from PIL import Image, ImageTk
 from skimage.exposure import match_histograms
-import threading
-import queue
-import time
+from skimage.metrics import structural_similarity
+
+from changechip import pipeline
 
 
 class PCBQualityAssuranceApp:
@@ -120,6 +123,7 @@ class PCBQualityAssuranceApp:
             ("Difference", "difference"),
             ("SSIM", "ssim"),
             ("Flicker", "flicker"),
+            ("ChangeChip", "changechip"),
         )
 
         for mode_text, mode_value in modes:
@@ -267,11 +271,12 @@ class PCBQualityAssuranceApp:
 
     def process_output(self):
         while True:
+            if self.reference_image is None:
+                continue
             frame = self.frame_queue.get()  # Wait for a frame to be available
             if frame is not None:
                 try:
-                    processed_frame = self.process_current_frame(frame)
-                    self.processed_frame = processed_frame
+                    self.processed_frame = self.process_current_frame(frame)
                 except Exception as e:
                     print(f"Error processing output frame: {e}")
 
@@ -292,6 +297,8 @@ class PCBQualityAssuranceApp:
             output = self.ssim_image(self.reference_image, frame)
         elif mode == "flicker":
             output = self.flicker_image(self.reference_image, frame)
+        elif mode == "changechip":
+            output = self.changechip_image(self.reference_image, frame)
         else:
             output = frame
 
@@ -301,7 +308,7 @@ class PCBQualityAssuranceApp:
         alpha = 0.5
         return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
 
-    def difference_image(self, reference_image, current_frame):
+    def difference_image(self, reference_image, current_frame, min_contour_area=100):
         # Compute the absolute difference
         diff = cv2.absdiff(reference_image, current_frame)
 
@@ -311,22 +318,16 @@ class PCBQualityAssuranceApp:
         # Threshold the grayscale difference image to create a binary mask
         _, binary_mask = cv2.threshold(gray_diff, 30, 255, cv2.THRESH_BINARY)
 
-        # Use morphological operations to remove small regions
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_OPEN, kernel)
-        binary_mask = cv2.morphologyEx(binary_mask, cv2.MORPH_CLOSE, kernel)
+        # Find contours in the binary mask
+        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Create a red image for highlighting
-        red_highlight = np.zeros_like(reference_image)
-        red_highlight[:, :] = [0, 0, 255]
+        # Filter and draw the contours filled with red on the current frame
+        red_diff = current_frame.copy()
+        for contour in contours:
+            if cv2.contourArea(contour) >= min_contour_area:
+                cv2.drawContours(red_diff, [contour], -1, (0, 0, 255), thickness=cv2.FILLED)
 
-        # Use the binary mask to color the differences in red
-        red_diff = cv2.bitwise_and(red_highlight, red_highlight, mask=binary_mask)
-
-        # Combine the red highlights with the original current frame
-        highlighted_diff = cv2.addWeighted(current_frame, 1, red_diff, 1, 0)
-
-        return highlighted_diff
+        return red_diff
 
     def ssim_image(self, reference_image, current_frame):
         gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
@@ -340,6 +341,11 @@ class PCBQualityAssuranceApp:
         time.sleep(delay)
         self.flicker_state = not self.flicker_state
         return reference_image if self.flicker_state else frame
+    
+    def changechip_image(self, reference_image, frame):
+        output = pipeline((frame, reference_image), resize_factor=0.4)
+        return output
+
 
     # ------------------------- Feature-Based Homography ------------------------- #
 
@@ -399,7 +405,7 @@ class PCBQualityAssuranceApp:
 
         resized_frame = cv2.resize(frame, target_size)
         rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-        pil_image = PILImage.fromarray(rgb_frame)
+        pil_image = Image.fromarray(rgb_frame)
         rotated_image = pil_image.rotate(180)  # Rotate the image 180 degrees
         return ImageTk.PhotoImage(image=rotated_image)
 
