@@ -296,7 +296,7 @@ class PCBQualityAssuranceApp:
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
 
         # Threshold the grayscale difference image to create a binary mask
-        _, binary_mask = cv2.threshold(gray_diff, 30, 255, cv2.THRESH_BINARY)
+        _, binary_mask = cv2.threshold(gray_diff, 50, 255, cv2.THRESH_BINARY)
 
         # Find contours in the binary mask
         contours, _ = cv2.findContours(
