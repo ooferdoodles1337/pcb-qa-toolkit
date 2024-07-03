@@ -221,20 +221,27 @@ class PCBQualityAssuranceApp:
         self.root.after(10, self.update_display)
 
     def update_input_display(self):
-        canvas_size = (self.input_canvas.winfo_width(), self.input_canvas.winfo_height())
+        canvas_size = (
+            self.input_canvas.winfo_width(),
+            self.input_canvas.winfo_height(),
+        )
         converted_frame = self.convert_frame_format(self.current_frame, canvas_size)
-        
+
         self.input_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
         self.input_canvas.image = converted_frame
 
     def update_reference_display(self):
-        canvas_size = (self.reference_canvas.winfo_width(), self.reference_canvas.winfo_height())
-        image_source = self.current_frame if self.reference_image is None else self.reference_image
-        
+        canvas_size = (
+            self.reference_canvas.winfo_width(),
+            self.reference_canvas.winfo_height(),
+        )
+        image_source = (
+            self.current_frame if self.reference_image is None else self.reference_image
+        )
+
         converted_frame = self.convert_frame_format(image_source, canvas_size)
         self.reference_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
         self.reference_canvas.image = converted_frame
-
 
     def update_output_display(self):
         if self.reference_image is not None:
