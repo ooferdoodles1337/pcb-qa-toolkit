@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime
 import queue
 import threading
 import tkinter as tk
@@ -16,14 +17,14 @@ from widgets import PanZoomCanvas
 
 
 class PCBQualityAssuranceApp:
-    def __init__(self, root):
+    def __init__(self, root, camera_id, camera_frame_width, camera_frame_height):
         print("Starting App")
         self.root = root
         self.root.title("PCB Quality Assurance Toolkit")
         self.window_width = 1600
         self.window_height = 900
         self.root.geometry(f"{self.window_width}x{self.window_height}")
-        self.root.minsize(1000, 600)
+        self.root.minsize(1400, 800)
         self.root.config()
 
         self.reference_image = None
@@ -32,9 +33,11 @@ class PCBQualityAssuranceApp:
         self.frame_queue = queue.Queue(maxsize=1)  # Queue to hold frames for processing
         self.flicker_state = True
 
-        self.cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)  # Changed to use default camera
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 2560)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1440)
+        self.cap = cv2.VideoCapture(
+            camera_id, cv2.CAP_DSHOW
+        )  # Changed to use default camera
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, camera_frame_width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, camera_frame_height)
         print("Initialized Webcam")
 
         # Set up the GUI
@@ -60,7 +63,7 @@ class PCBQualityAssuranceApp:
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_columnconfigure(1, weight=3)
 
-        # Create frames
+        # Create left and right frames
         self.left_frame = tk.Frame(self.root, bg="azure2")
         self.left_frame.grid(row=0, column=0, sticky="nswe")
         self.left_frame.pack_propagate(False)
@@ -69,11 +72,19 @@ class PCBQualityAssuranceApp:
         self.right_frame.grid(row=0, column=1, sticky="nswe")
         self.right_frame.pack_propagate(False)
 
-        # ---------------------------------------------------------------------------- #
-        #                                  Left Frame                                  #
-        # ---------------------------------------------------------------------------- #
+        # Left Frame Widgets
+        self.create_left_frame_widgets()
 
-        # ---------------------------------- Cameras --------------------------------- #
+        # Right Frame Widgets
+        self.create_right_frame_widgets()
+
+        # Bind resize event and schedule display update
+        self.root.bind("<Configure>", self.resize_all_canvases)
+        self.resize_all_canvases(None)
+        self.root.after(10, self.update_display)
+
+    def create_left_frame_widgets(self):
+        # Cameras Section
         self.input_label = tk.Label(self.left_frame, text="Input Image", bg="azure1")
         self.input_label.pack(fill="x", padx=5, pady=(5, 0))
         self.input_canvas = tk.Canvas(self.left_frame)
@@ -86,37 +97,33 @@ class PCBQualityAssuranceApp:
         self.reference_canvas = tk.Canvas(self.left_frame)
         self.reference_canvas.pack(fill="x", padx=5, pady=(5, 0))
 
-        # ---------------------------------- Buttons --------------------------------- #
+        # Buttons Section
         self.button_frame = tk.Frame(self.left_frame)
         self.button_frame.pack(fill="x", padx=5, pady=(5, 0))
 
-        self.capture_reference_button = tk.Button(
-            self.button_frame,
-            text="Capture Reference",
-            command=self.capture_reference,
-            bg="azure1",
+        self.setup_button(
+            self.button_frame, "Capture Reference", self.capture_reference
         )
-        self.capture_reference_button.pack(side=tk.LEFT, expand=True, fill="both")
+        self.setup_button(self.button_frame, "Clear Reference", self.clear_reference)
+        self.setup_button(self.button_frame, "Upload Reference", self.upload_reference)
 
-        self.clear_reference_button = tk.Button(
-            self.button_frame,
-            text="Clear Reference",
-            command=self.clear_reference,
-            bg="azure1",
-        )
-        self.clear_reference_button.pack(side=tk.LEFT, expand=True, fill="both")
-
-        self.upload_file_button = tk.Button(
-            self.button_frame,
-            text="Upload Reference",
-            command=self.upload_reference,
-            bg="azure1",
-        )
-        self.upload_file_button.pack(side=tk.LEFT, expand=True, fill="both")
-
-        # ---------------------------- Mode Radio Buttons ---------------------------- #
+        # Mode Radio Buttons
         self.mode_label = tk.Label(self.left_frame, text="Output Mode", bg="azure1")
         self.mode_label.pack(fill="x", padx=5, pady=(5, 0))
+        self.setup_radio_buttons()
+
+        # Preprocessing Checkboxes
+        self.preprocess_label = tk.Label(
+            self.left_frame, text="Preprocessing Options", bg="azure1"
+        )
+        self.preprocess_label.pack(fill="x", padx=5, pady=(5, 0))
+        self.setup_checkboxes()
+
+    def setup_button(self, parent, text, command):
+        button = tk.Button(parent, text=text, command=command, bg="azure1")
+        button.pack(side=tk.LEFT, expand=True, fill="both")
+
+    def setup_radio_buttons(self):
         self.mode = tk.StringVar(value="none")
         modes = (
             ("None", "none"),
@@ -137,49 +144,36 @@ class PCBQualityAssuranceApp:
             )
             r.pack(fill="x", padx=5)
 
-        # ------------------------- Preprocessing Checkboxes ------------------------- #
-        self.preprocess_label = tk.Label(
-            self.left_frame, text="Preprocessing Options", bg="azure1"
-        )
-        self.preprocess_label.pack(fill="x", padx=5, pady=(5, 0))
-
+    def setup_checkboxes(self):
         self.homography_var = tk.IntVar()
         self.histogram_var = tk.IntVar()
 
-        self.homography_checkbutton = tk.Checkbutton(
+        self.setup_checkbox("Homography", self.homography_var)
+        self.setup_checkbox("Histogram Matching", self.histogram_var)
+
+    def setup_checkbox(self, text, variable):
+        checkbox = tk.Checkbutton(
             self.left_frame,
-            text="Homography",
-            variable=self.homography_var,
+            text=text,
+            variable=variable,
             onvalue=1,
             offvalue=0,
             bg="azure1",
         )
-        self.homography_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
+        checkbox.pack(fill="x", padx=5, pady=(0, 0))
 
-        self.histogram_checkbutton = tk.Checkbutton(
-            self.left_frame,
-            text="Histogram Matching",
-            variable=self.histogram_var,
-            onvalue=1,
-            offvalue=0,
-            bg="azure1",
-        )
-        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
-
-        # ---------------------------------------------------------------------------- #
-        #                                  Right Frame                                 #
-        # ---------------------------------------------------------------------------- #
+    def create_right_frame_widgets(self):
+        # Output Image Section
         self.output_label = tk.Label(self.right_frame, text="Output Image", bg="azure1")
         self.output_label.pack(fill="x", padx=5, pady=(5, 0))
         self.output_canvas = PanZoomCanvas(master=self.right_frame)
 
-        self.root.bind("<Configure>", self.resize_all_canvases)
-        self.resize_all_canvases(None)
-
-        # Schedule the initial display update
-        self.root.after(10, self.update_display)
-
     def capture_webcam(self):
+        """
+        Continuously captures frames from the webcam. The latest frame is always stored in `self.current_frame`.
+        Frames are also placed in a queue for further processing, ensuring that only the most recent frame is kept
+        if the queue becomes full.
+        """
         while self.cap.isOpened():
             ret, frame = self.cap.read()
             if ret:
@@ -195,6 +189,16 @@ class PCBQualityAssuranceApp:
                     self.frame_queue.put(frame)
 
     def resize_all_canvases(self, event):
+        """
+        Resizes all canvases in the GUI to maintain a 16:9 aspect ratio whenever the window is resized.
+
+        This function calculates the new dimensions for each canvas based on the width of the frame it is
+        contained in, adjusted for a padding of 10 pixels, and then updates the canvas size accordingly.
+
+        Args:
+            event (tk.Event): The event object containing information about the resize event.
+        """
+
         def resize_canvas(canvas, frame):
             # Calculate canvas dimensions with 16:9 aspect ratio
             frame_width = frame.winfo_width() - 10  # Adjust for padding
@@ -209,6 +213,16 @@ class PCBQualityAssuranceApp:
     # ------------------------- Display Update Functions ------------------------- #
 
     def update_display(self):
+        """
+        Continuously updates the display of the input, reference, and output canvases. This function schedules
+        the next update after a short delay to ensure a smooth and responsive interface.
+
+        If the current frame is not None, it attempts to update the input, reference, and output displays.
+        In case of any exceptions during the update process, the error is printed to the console.
+
+        This function is designed to be called repeatedly using `root.after`, creating a loop that updates
+        the display every 10 milliseconds.
+        """
         if self.current_frame is not None:
             try:
                 self.update_input_display()
@@ -220,28 +234,32 @@ class PCBQualityAssuranceApp:
         # Schedule the next display update
         self.root.after(10, self.update_display)
 
-    def update_input_display(self):
-        canvas_size = (
-            self.input_canvas.winfo_width(),
-            self.input_canvas.winfo_height(),
-        )
-        converted_frame = self.convert_frame_format(self.current_frame, canvas_size)
+    def update_canvas_display(self, canvas, frame):
+        """
+        Updates a given canvas with the provided frame. The frame is converted to the appropriate format and
+        resized to fit the canvas dimensions before being displayed.
 
-        self.input_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
-        self.input_canvas.image = converted_frame
+        Args:
+            canvas (tk.Canvas): The canvas widget to update.
+            frame (np.array): The frame to display on the canvas, expected in numpy array format.
+
+        This function resizes the frame to match the canvas size and converts it to a format suitable for
+        display in the Tkinter canvas. It then creates an image on the canvas at the top-left corner (0, 0).
+        The converted frame is stored in the canvas to prevent it from being garbage collected.
+        """
+        canvas_size = (canvas.winfo_width(), canvas.winfo_height())
+        converted_frame = self.convert_frame_format(frame, canvas_size)
+        canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
+        canvas.image = converted_frame
+
+    def update_input_display(self):
+        self.update_canvas_display(self.input_canvas, self.current_frame)
 
     def update_reference_display(self):
-        canvas_size = (
-            self.reference_canvas.winfo_width(),
-            self.reference_canvas.winfo_height(),
-        )
         image_source = (
             self.current_frame if self.reference_image is None else self.reference_image
         )
-
-        converted_frame = self.convert_frame_format(image_source, canvas_size)
-        self.reference_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
-        self.reference_canvas.image = converted_frame
+        self.update_canvas_display(self.reference_canvas, image_source)
 
     def update_output_display(self):
         if self.reference_image is not None:
@@ -254,9 +272,14 @@ class PCBQualityAssuranceApp:
     # ------------------------- Image Processing Functions ------------------------- #
 
     def process_output(self):
+        """
+        Continuously processes frames from the frame queue. If no reference image is available,
+        it skips processing and waits briefly to avoid high CPU usage.
+        """
         while True:
             if self.reference_image is None:
                 self.processed_frame = None
+                time.sleep(0.01)  # Small delay to prevent high CPU usage
                 continue
             frame = self.frame_queue.get()  # Wait for a frame to be available
             if frame is not None:
@@ -266,19 +289,28 @@ class PCBQualityAssuranceApp:
                     print(f"Error processing output frame: {e}")
 
     def process_current_frame(self, frame):
-        # Retrieve and store the state of variables
+        """
+        Processes the current frame based on selected options and mode.
+
+        This function applies color histogram matching and homography transformation
+        if they are active, then processes the frame according to the selected mode.
+
+        Args:
+            frame (np.array): The current frame to be processed.
+
+        Returns:
+            np.array: The processed frame based on the selected mode.
+        """
         histogram_active = self.histogram_var.get() == 1
         homography_active = self.homography_var.get() == 1
         mode = self.mode.get()
 
-        # Apply pre-processing steps
         if histogram_active:
             frame = self.match_colors(self.reference_image, frame)
 
         if homography_active:
             frame = self.apply_homography(self.reference_image, frame)
 
-        # Define a dictionary to map modes to their corresponding functions
         mode_functions = {
             "overlay": self.process_overlay,
             "difference": self.process_difference,
@@ -287,29 +319,22 @@ class PCBQualityAssuranceApp:
             "changechip": self.process_changechip,
         }
 
-        # Apply the selected mode function
         output = mode_functions.get(mode, lambda ref, frm: frm)(
             self.reference_image, frame
         )
-
         return output
 
-    def process_overlay(self, reference_image, current_frame):
-        alpha = 0.5
+    def process_overlay(self, reference_image, current_frame, alpha=0.5):
         return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
 
-    def process_difference(self, reference_image, current_frame, min_contour_area=400):
+    def process_difference(self, reference_image, current_frame, min_contour_area=400, alpha=0.7):
         diff = cv2.absdiff(reference_image, current_frame)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
-
         # Threshold the grayscale difference image to create a binary mask
         _, binary_mask = cv2.threshold(gray_diff, 50, 255, cv2.THRESH_BINARY)
-
-        # Find contours in the binary mask
         contours, _ = cv2.findContours(
             binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
-
         # Filter and draw the contours filled with red on the current frame
         red_diff = current_frame.copy()
         for contour in contours:
@@ -317,8 +342,8 @@ class PCBQualityAssuranceApp:
                 cv2.drawContours(
                     red_diff, [contour], -1, (0, 0, 255), thickness=cv2.FILLED
                 )
-
-        return red_diff
+        output_frame = cv2.addWeighted(current_frame, 1 - alpha, red_diff, alpha, 0)
+        return output_frame
 
     def process_ssim(self, reference_image, current_frame):
         gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
@@ -377,7 +402,16 @@ class PCBQualityAssuranceApp:
     # ----------------------------- Button Functions ----------------------------- #
 
     def capture_reference(self):
+        # Ensure the references directory exists
+        if not os.path.exists('reference_images'):
+            os.makedirs('reference_images')
+
         self.reference_image = self.current_frame.copy()
+        current_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        reference_image_filename = f'reference_image_{current_time_str}.png'
+        reference_image_path = os.path.join('reference_images', reference_image_filename)
+        cv2.imwrite(reference_image_path, self.reference_image)
+        print(f"Reference image saved at {reference_image_path}")   
 
     def clear_reference(self):
         self.reference_image = None
@@ -389,9 +423,37 @@ class PCBQualityAssuranceApp:
 
     # ------------------------------ Other Functions ----------------------------- #
 
-    def convert_frame_format(self, frame, target_size=None, convert_to_tk=True):
-        frame = cv2.resize(frame, target_size) if target_size else frame
-        pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).rotate(180)
+    def convert_frame_format(
+        self, frame, target_size=None, convert_to_tk=True, rotation_angle=180
+    ):
+        """
+        Converts a frame from OpenCV format to PIL format and optionally to a Tkinter-compatible format,
+        with an optional rotation applied.
+
+        Args:
+            frame (np.array): The input frame in OpenCV format (BGR color space).
+            target_size (tuple, optional): The target size (width, height) for resizing the frame. Defaults to None.
+            convert_to_tk (bool, optional): Whether to convert the PIL image to a Tkinter PhotoImage. Defaults to True.
+            rotation_angle (int, optional): The angle by which to rotate the PIL image. Defaults to 180 degrees.
+
+        Returns:
+            ImageTk.PhotoImage or PIL.Image: If convert_to_tk is True, returns a Tkinter PhotoImage object.
+                                            Otherwise, returns a PIL Image object.
+
+        Notes:
+            - If target_size is specified, the frame is resized to the target dimensions using OpenCV's resize function.
+            - Converts the frame from BGR to RGB color space using OpenCV and then creates a PIL Image from the array.
+            - Rotates the PIL image by the specified rotation_angle before returning to adjust for image orientation.
+        """
+        # Resize the frame if target_size is specified
+        resized_frame = cv2.resize(frame, target_size) if target_size else frame
+
+        # Convert BGR to RGB and create a PIL Image
+        pil_image = Image.fromarray(
+            cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
+        ).rotate(rotation_angle)
+
+        # Convert PIL Image to Tkinter PhotoImage if requested
         return ImageTk.PhotoImage(pil_image) if convert_to_tk else pil_image
 
     def on_closing(self):
@@ -401,5 +463,7 @@ class PCBQualityAssuranceApp:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = PCBQualityAssuranceApp(root)
+    app = PCBQualityAssuranceApp(
+        root, camera_id=1, camera_frame_width=2560, camera_frame_height=1440
+    )
     root.mainloop()
