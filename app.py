@@ -12,6 +12,7 @@ from skimage.exposure import match_histograms
 from skimage.metrics import structural_similarity
 
 from changechip import pipeline
+from widgets import PanZoomCanvas
 
 
 class PCBQualityAssuranceApp:
@@ -170,8 +171,7 @@ class PCBQualityAssuranceApp:
         # ---------------------------------------------------------------------------- #
         self.output_label = tk.Label(self.right_frame, text="Output Image", bg="azure1")
         self.output_label.pack(fill="x", padx=5, pady=(5, 0))
-        self.output_canvas = tk.Canvas(self.right_frame, bg="azure1")
-        self.output_canvas.pack(fill="both", padx=5, pady=5)
+        self.output_canvas = PanZoomCanvas(master=self.right_frame)
 
         self.root.bind("<Configure>", self.resize_all_canvases)
         self.resize_all_canvases(None)
@@ -203,7 +203,6 @@ class PCBQualityAssuranceApp:
             canvas.config(width=canvas_width, height=canvas_height)
 
         # Resize each canvas
-        resize_canvas(self.output_canvas, self.right_frame)
         resize_canvas(self.input_canvas, self.left_frame)
         resize_canvas(self.reference_canvas, self.left_frame)
 
@@ -222,56 +221,35 @@ class PCBQualityAssuranceApp:
         self.root.after(10, self.update_display)
 
     def update_input_display(self):
-        canvas_width = self.input_canvas.winfo_width()
-        canvas_height = self.input_canvas.winfo_height()
-        target_size = (canvas_width, canvas_height)
-        converted_frame = self.convert_frame_to_photoimage(
-            self.current_frame, target_size
-        )
+        canvas_size = (self.input_canvas.winfo_width(), self.input_canvas.winfo_height())
+        converted_frame = self.convert_frame_format(self.current_frame, canvas_size)
+        
         self.input_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
         self.input_canvas.image = converted_frame
 
     def update_reference_display(self):
-        canvas_width = self.reference_canvas.winfo_width()
-        canvas_height = self.reference_canvas.winfo_height()
-        target_size = (canvas_width, canvas_height)
-        if self.reference_image is None:
-            converted_frame = self.convert_frame_to_photoimage(
-                self.current_frame, target_size
-            )
-            self.reference_canvas.create_image(
-                0, 0, anchor=tk.NW, image=converted_frame
-            )
-            self.reference_canvas.image = converted_frame
-            return
-
-        converted_frame = self.convert_frame_to_photoimage(
-            self.reference_image, target_size
-        )
+        canvas_size = (self.reference_canvas.winfo_width(), self.reference_canvas.winfo_height())
+        image_source = self.current_frame if self.reference_image is None else self.reference_image
+        
+        converted_frame = self.convert_frame_format(image_source, canvas_size)
         self.reference_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
         self.reference_canvas.image = converted_frame
 
+
     def update_output_display(self):
-        canvas_width = self.output_canvas.winfo_width()
-        canvas_height = self.output_canvas.winfo_height()
-        target_size = (canvas_width, canvas_height)
-
-        if self.processed_frame is None or self.reference_image is None:
-            self.output_canvas.create_image(0, 0, anchor=tk.NW, image=None)
-            self.output_canvas.image = None
-            return
-
-        converted_frame = self.convert_frame_to_photoimage(
-            self.processed_frame, target_size
-        )
-        self.output_canvas.create_image(0, 0, anchor=tk.NW, image=converted_frame)
-        self.output_canvas.image = converted_frame
+        if self.reference_image is not None:
+            self.output_canvas.set_image(
+                self.convert_frame_format(self.processed_frame, convert_to_tk=False)
+            )
+        else:
+            self.output_canvas.remove_image()
 
     # ------------------------- Image Processing Functions ------------------------- #
 
     def process_output(self):
         while True:
             if self.reference_image is None:
+                self.processed_frame = None
                 continue
             frame = self.frame_queue.get()  # Wait for a frame to be available
             if frame is not None:
@@ -281,55 +259,61 @@ class PCBQualityAssuranceApp:
                     print(f"Error processing output frame: {e}")
 
     def process_current_frame(self, frame):
+        # Retrieve and store the state of variables
+        histogram_active = self.histogram_var.get() == 1
+        homography_active = self.homography_var.get() == 1
+        mode = self.mode.get()
 
-        if self.histogram_var.get() == 1:
+        # Apply pre-processing steps
+        if histogram_active:
             frame = self.match_colors(self.reference_image, frame)
 
-        if self.homography_var.get() == 1:
+        if homography_active:
             frame = self.apply_homography(self.reference_image, frame)
 
-        mode = self.mode.get()
-        if mode == "overlay":
-            output = self.overlay_images(self.reference_image, frame)
-        elif mode == "difference":
-            output = self.difference_image(self.reference_image, frame)
-        elif mode == "ssim":
-            output = self.ssim_image(self.reference_image, frame)
-        elif mode == "flicker":
-            output = self.flicker_image(self.reference_image, frame)
-        elif mode == "changechip":
-            output = self.changechip_image(self.reference_image, frame)
-        else:
-            output = frame
+        # Define a dictionary to map modes to their corresponding functions
+        mode_functions = {
+            "overlay": self.process_overlay,
+            "difference": self.process_difference,
+            "ssim": self.process_ssim,
+            "flicker": self.process_flicker,
+            "changechip": self.process_changechip,
+        }
+
+        # Apply the selected mode function
+        output = mode_functions.get(mode, lambda ref, frm: frm)(
+            self.reference_image, frame
+        )
 
         return output
 
-    def overlay_images(self, reference_image, current_frame):
+    def process_overlay(self, reference_image, current_frame):
         alpha = 0.5
         return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
 
-    def difference_image(self, reference_image, current_frame, min_contour_area=100):
-        # Compute the absolute difference
+    def process_difference(self, reference_image, current_frame, min_contour_area=400):
         diff = cv2.absdiff(reference_image, current_frame)
-
-        # Convert the difference image to grayscale
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
 
         # Threshold the grayscale difference image to create a binary mask
         _, binary_mask = cv2.threshold(gray_diff, 30, 255, cv2.THRESH_BINARY)
 
         # Find contours in the binary mask
-        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours, _ = cv2.findContours(
+            binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
 
         # Filter and draw the contours filled with red on the current frame
         red_diff = current_frame.copy()
         for contour in contours:
             if cv2.contourArea(contour) >= min_contour_area:
-                cv2.drawContours(red_diff, [contour], -1, (0, 0, 255), thickness=cv2.FILLED)
+                cv2.drawContours(
+                    red_diff, [contour], -1, (0, 0, 255), thickness=cv2.FILLED
+                )
 
         return red_diff
 
-    def ssim_image(self, reference_image, current_frame):
+    def process_ssim(self, reference_image, current_frame):
         gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
         gray_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
         _, diff = structural_similarity(gray_reference, gray_frame, full=True)
@@ -337,15 +321,14 @@ class PCBQualityAssuranceApp:
         diff_color = cv2.cvtColor(diff, cv2.COLOR_GRAY2BGR)
         return diff_color
 
-    def flicker_image(self, reference_image, frame, delay=0.2):
+    def process_flicker(self, reference_image, frame, delay=0.2):
         time.sleep(delay)
         self.flicker_state = not self.flicker_state
         return reference_image if self.flicker_state else frame
-    
-    def changechip_image(self, reference_image, frame):
-        output = pipeline((frame, reference_image), resize_factor=0.4)
-        return output
 
+    def process_changechip(self, reference_image, frame):
+        output = pipeline((frame, reference_image), resize_factor=0.5)
+        return output
 
     # ------------------------- Feature-Based Homography ------------------------- #
 
@@ -399,15 +382,10 @@ class PCBQualityAssuranceApp:
 
     # ------------------------------ Other Functions ----------------------------- #
 
-    def convert_frame_to_photoimage(self, frame, target_size):
-        if frame is None:
-            return None
-
-        resized_frame = cv2.resize(frame, target_size)
-        rgb_frame = cv2.cvtColor(resized_frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(rgb_frame)
-        rotated_image = pil_image.rotate(180)  # Rotate the image 180 degrees
-        return ImageTk.PhotoImage(image=rotated_image)
+    def convert_frame_format(self, frame, target_size=None, convert_to_tk=True):
+        frame = cv2.resize(frame, target_size) if target_size else frame
+        pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).rotate(180)
+        return ImageTk.PhotoImage(pil_image) if convert_to_tk else pil_image
 
     def on_closing(self):
         self.cap.release()
