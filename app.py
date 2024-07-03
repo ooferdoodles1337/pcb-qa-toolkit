@@ -154,7 +154,7 @@ class PCBQualityAssuranceApp:
             offvalue=0,
             bg="azure1",
         )
-        self.homography_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
+        self.homography_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
 
         self.histogram_checkbutton = tk.Checkbutton(
             self.left_frame,
@@ -164,7 +164,7 @@ class PCBQualityAssuranceApp:
             offvalue=0,
             bg="azure1",
         )
-        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(5, 0))
+        self.histogram_checkbutton.pack(fill="x", padx=5, pady=(0, 0))
 
         # ---------------------------------------------------------------------------- #
         #                                  Right Frame                                 #
