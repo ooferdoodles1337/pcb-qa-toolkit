@@ -148,8 +148,8 @@ class PCBQualityAssuranceApp:
         self.homography_var = tk.IntVar()
         self.histogram_var = tk.IntVar()
 
-        self.setup_checkbox("Homography", self.homography_var)
-        self.setup_checkbox("Histogram Matching", self.histogram_var)
+        self.setup_checkbox("Align Images", self.homography_var)
+        self.setup_checkbox("Match Colors", self.histogram_var)
 
     def setup_checkbox(self, text, variable):
         checkbox = tk.Checkbutton(
@@ -167,6 +167,8 @@ class PCBQualityAssuranceApp:
         self.output_label = tk.Label(self.right_frame, text="Output Image", bg="azure1")
         self.output_label.pack(fill="x", padx=5, pady=(5, 0))
         self.output_canvas = PanZoomCanvas(master=self.right_frame)
+        self.defect_capture_button = tk.Button(self.right_frame, text="Capture Defect", bg="azure1", command=self.capture_defect)
+        self.defect_capture_button.pack(fill="x", padx=5, pady=(5, 5))
 
     def capture_webcam(self):
         """
@@ -323,11 +325,11 @@ class PCBQualityAssuranceApp:
     def process_overlay(self, reference_image, current_frame, alpha=0.5):
         return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
 
-    def process_difference(self, reference_image, current_frame, min_contour_area=400, alpha=0.7):
+    def process_difference(self, reference_image, current_frame, min_contour_area=600, alpha=0.5):
         diff = cv2.absdiff(reference_image, current_frame)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
         # Threshold the grayscale difference image to create a binary mask
-        _, binary_mask = cv2.threshold(gray_diff, 50, 255, cv2.THRESH_BINARY)
+        _, binary_mask = cv2.threshold(gray_diff, 70, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(
             binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
@@ -398,16 +400,25 @@ class PCBQualityAssuranceApp:
     # ----------------------------- Button Functions ----------------------------- #
 
     def capture_reference(self):
-        # Ensure the references directory exists
-        if not os.path.exists('reference_images'):
-            os.makedirs('reference_images')
+        try:
+            # Ensure the references directory exists
+            dir = os.path.join('images', 'reference_images')
+            os.makedirs(dir, exist_ok=True)
 
-        self.reference_image = self.current_frame.copy()
-        current_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-        reference_image_filename = f'reference_image_{current_time_str}.png'
-        reference_image_path = os.path.join('reference_images', reference_image_filename)
-        cv2.imwrite(reference_image_path, self.reference_image)
-        print(f"Reference image saved at {reference_image_path}")   
+            # Copy the current frame to use as the reference image
+            self.reference_image = self.current_frame.copy()
+
+            # Generate a timestamped filename for the reference image
+            current_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            reference_image_filename = f'reference_image_{current_time_str}.png'
+            reference_image_path = os.path.join(dir, reference_image_filename)
+
+            # Save the reference image to the specified path
+            cv2.imwrite(reference_image_path, self.reference_image)
+            print(f"Reference image saved at {reference_image_path}")
+
+        except Exception as e:
+            print(f"An error occurred while capturing the reference image: {e}")
 
     def clear_reference(self):
         self.reference_image = None
@@ -417,6 +428,27 @@ class PCBQualityAssuranceApp:
         file_path = filedialog.askopenfilename()
         if file_path:
             self.reference_image = cv2.imread(file_path)
+
+    def capture_defect(self):
+        try:
+            # Ensure the defects directory exists
+            dir = os.path.join('images', 'defect_images')
+            os.makedirs(dir, exist_ok=True)
+
+            # Copy the current frame to use as the defect image
+            defect_image = self.current_frame.copy()
+
+            # Generate a timestamped filename for the defect image
+            current_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            defect_image_filename = f'defect_image_{current_time_str}.png'
+            defect_image_path = os.path.join(dir, defect_image_filename)
+
+            # Save the defect image to the specified path
+            cv2.imwrite(defect_image_path, defect_image)
+            print(f"Defect image saved at {defect_image_path}")
+
+        except Exception as e:
+            print(f"An error occurred while capturing the defect image: {e}")
 
     # ------------------------------ Other Functions ----------------------------- #
 
