@@ -27,6 +27,9 @@ class PCBQualityAssuranceApp:
         self.root.minsize(1400, 800)
         self.root.config()
 
+        self.font = "Segoe UI"
+        self.fontsize = 12
+
         self.reference_image = None
         self.current_frame = None
         self.processed_frame = None
@@ -85,13 +88,21 @@ class PCBQualityAssuranceApp:
 
     def create_left_frame_widgets(self):
         # Cameras Section
-        self.input_label = tk.Label(self.left_frame, text="Input Image", bg="azure1")
+        self.input_label = tk.Label(
+            self.left_frame,
+            text="Input Image",
+            bg="azure1",
+            font=(self.font, self.fontsize),
+        )
         self.input_label.pack(fill="x", padx=5, pady=(5, 0))
         self.input_canvas = tk.Canvas(self.left_frame)
         self.input_canvas.pack(fill="x", padx=5, pady=(5, 0))
 
         self.reference_label = tk.Label(
-            self.left_frame, text="Reference Image", bg="azure1"
+            self.left_frame,
+            text="Reference Image",
+            bg="azure1",
+            font=(self.font, self.fontsize),
         )
         self.reference_label.pack(fill="x", padx=5, pady=(5, 0))
         self.reference_canvas = tk.Canvas(self.left_frame)
@@ -101,26 +112,38 @@ class PCBQualityAssuranceApp:
         self.button_frame = tk.Frame(self.left_frame)
         self.button_frame.pack(fill="x", padx=5, pady=(5, 0))
 
-        self.setup_button(
-            self.button_frame, "Capture Reference", self.capture_reference
-        )
-        self.setup_button(self.button_frame, "Clear Reference", self.clear_reference)
-        self.setup_button(self.button_frame, "Upload Reference", self.upload_reference)
+        self.setup_button(self.button_frame, "Capture", self.capture_reference)
+        self.setup_button(self.button_frame, "Clear", self.clear_reference)
+        self.setup_button(self.button_frame, "Upload", self.upload_reference)
 
         # Mode Radio Buttons
-        self.mode_label = tk.Label(self.left_frame, text="Output Mode", bg="azure1")
+        self.mode_label = tk.Label(
+            self.left_frame,
+            text="Output Mode",
+            bg="azure1",
+            font=(self.font, self.fontsize),
+        )
         self.mode_label.pack(fill="x", padx=5, pady=(5, 0))
         self.setup_radio_buttons()
 
         # Preprocessing Checkboxes
         self.preprocess_label = tk.Label(
-            self.left_frame, text="Preprocessing Options", bg="azure1"
+            self.left_frame,
+            text="Preprocessing Options",
+            bg="azure1",
+            font=(self.font, self.fontsize),
         )
         self.preprocess_label.pack(fill="x", padx=5, pady=(5, 0))
         self.setup_checkboxes()
 
     def setup_button(self, parent, text, command):
-        button = tk.Button(parent, text=text, command=command, bg="azure1")
+        button = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bg="azure1",
+            font=(self.font, self.fontsize),
+        )
         button.pack(side=tk.LEFT, expand=True, fill="both")
 
     def setup_radio_buttons(self):
@@ -141,6 +164,7 @@ class PCBQualityAssuranceApp:
                 value=mode_value,
                 variable=self.mode,
                 bg="azure1",
+                font=(self.font, self.fontsize),
             )
             r.pack(fill="x", padx=5)
 
@@ -159,15 +183,27 @@ class PCBQualityAssuranceApp:
             onvalue=1,
             offvalue=0,
             bg="azure1",
+            font=(self.font, self.fontsize),
         )
         checkbox.pack(fill="x", padx=5, pady=(0, 0))
 
     def create_right_frame_widgets(self):
         # Output Image Section
-        self.output_label = tk.Label(self.right_frame, text="Output Image", bg="azure1")
+        self.output_label = tk.Label(
+            self.right_frame,
+            text="Output Image",
+            bg="azure1",
+            font=(self.font, self.fontsize),
+        )
         self.output_label.pack(fill="x", padx=5, pady=(5, 0))
         self.output_canvas = PanZoomCanvas(master=self.right_frame)
-        self.defect_capture_button = tk.Button(self.right_frame, text="Capture Defect", bg="azure1", command=self.capture_defect)
+        self.defect_capture_button = tk.Button(
+            self.right_frame,
+            text="Capture Defect",
+            bg="azure1",
+            command=self.capture_defect,
+            font=(self.font, self.fontsize),
+        )
         self.defect_capture_button.pack(fill="x", padx=5, pady=(5, 5))
 
     def capture_webcam(self):
@@ -325,21 +361,42 @@ class PCBQualityAssuranceApp:
     def process_overlay(self, reference_image, current_frame, alpha=0.5):
         return cv2.addWeighted(reference_image, alpha, current_frame, 1 - alpha, 0)
 
-    def process_difference(self, reference_image, current_frame, min_contour_area=600, alpha=0.5):
+    def process_difference(
+        self,
+        reference_image,
+        current_frame,
+        min_contour_area=300,
+        alpha=0.5,
+        min_ratio=0.005,
+        max_ratio=0.5,
+    ):
         diff = cv2.absdiff(reference_image, current_frame)
         gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
+
         # Threshold the grayscale difference image to create a binary mask
-        _, binary_mask = cv2.threshold(gray_diff, 70, 255, cv2.THRESH_BINARY)
+        _, binary_mask = cv2.threshold(gray_diff, 40, 255, cv2.THRESH_BINARY)
         contours, _ = cv2.findContours(
             binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
-        # Filter and draw the contours filled with red on the current frame
+
+        # Create a copy of the current frame to draw the contours
         red_diff = current_frame.copy()
+
         for contour in contours:
-            if cv2.contourArea(contour) >= min_contour_area:
+            area = cv2.contourArea(contour)
+            if area < min_contour_area:
+                continue
+
+            perimeter = cv2.arcLength(contour, True)
+            if perimeter == 0:
+                continue  # Avoid division by zero
+
+            ratio = area / (perimeter**2)
+            if min_ratio <= ratio <= max_ratio:
                 cv2.drawContours(
                     red_diff, [contour], -1, (0, 0, 255), thickness=cv2.FILLED
                 )
+
         output_frame = cv2.addWeighted(current_frame, 1 - alpha, red_diff, alpha, 0)
         return output_frame
 
@@ -358,6 +415,7 @@ class PCBQualityAssuranceApp:
 
     def process_changechip(self, reference_image, frame):
         output = pipeline((frame, reference_image), resize_factor=0.5)
+        output = cv2.resize(output, None, fx=2, fy=2)
         return output
 
     # ------------------------- Feature-Based Homography ------------------------- #
@@ -402,15 +460,15 @@ class PCBQualityAssuranceApp:
     def capture_reference(self):
         try:
             # Ensure the references directory exists
-            dir = os.path.join('images', 'reference_images')
+            dir = os.path.join("images", "reference_images")
             os.makedirs(dir, exist_ok=True)
 
             # Copy the current frame to use as the reference image
             self.reference_image = self.current_frame.copy()
 
             # Generate a timestamped filename for the reference image
-            current_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-            reference_image_filename = f'reference_image_{current_time_str}.png'
+            current_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            reference_image_filename = f"reference_image_{current_time_str}.png"
             reference_image_path = os.path.join(dir, reference_image_filename)
 
             # Save the reference image to the specified path
@@ -432,15 +490,15 @@ class PCBQualityAssuranceApp:
     def capture_defect(self):
         try:
             # Ensure the defects directory exists
-            dir = os.path.join('images', 'defect_images')
+            dir = os.path.join("images", "defect_images")
             os.makedirs(dir, exist_ok=True)
 
             # Copy the current frame to use as the defect image
             defect_image = self.current_frame.copy()
 
             # Generate a timestamped filename for the defect image
-            current_time_str = datetime.now().strftime('%Y%m%d_%H%M%S')
-            defect_image_filename = f'defect_image_{current_time_str}.png'
+            current_time_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            defect_image_filename = f"defect_image_{current_time_str}.png"
             defect_image_path = os.path.join(dir, defect_image_filename)
 
             # Save the defect image to the specified path
