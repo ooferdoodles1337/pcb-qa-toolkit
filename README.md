@@ -5,7 +5,7 @@ This is an internal tool to perform quality assurance on PCBs through computer v
 ## Installation
 
 ### Prerequisites
-- Tested on Python 3.11+
+- Tested on Python 3.11+ on Windows
 
 ### Using `venv`
 
