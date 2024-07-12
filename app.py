@@ -367,17 +367,23 @@ class PCBQualityAssuranceApp:
         current_frame,
         min_contour_area=300,
         alpha=0.5,
-        min_ratio=0.005,
+        min_ratio=0.004,
         max_ratio=0.5,
     ):
+        # Compute the absolute difference for each channel
         diff = cv2.absdiff(reference_image, current_frame)
-        gray_diff = cv2.cvtColor(diff, cv2.COLOR_BGR2GRAY)
 
-        # Threshold the grayscale difference image to create a binary mask
-        _, binary_mask = cv2.threshold(gray_diff, 40, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(
-            binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-        )
+        # Threshold each channel independently
+        _, binary_mask_r = cv2.threshold(diff[:, :, 0], 30, 255, cv2.THRESH_BINARY)
+        _, binary_mask_g = cv2.threshold(diff[:, :, 1], 30, 255, cv2.THRESH_BINARY)
+        _, binary_mask_b = cv2.threshold(diff[:, :, 2], 30, 255, cv2.THRESH_BINARY)
+
+        # Combine the binary masks
+        binary_mask = cv2.bitwise_or(binary_mask_r, binary_mask_g)
+        binary_mask = cv2.bitwise_or(binary_mask, binary_mask_b)
+
+        # Find contours in the combined binary mask
+        contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # Create a copy of the current frame to draw the contours
         red_diff = current_frame.copy()
@@ -393,12 +399,12 @@ class PCBQualityAssuranceApp:
 
             ratio = area / (perimeter**2)
             if min_ratio <= ratio <= max_ratio:
-                cv2.drawContours(
-                    red_diff, [contour], -1, (0, 0, 255), thickness=cv2.FILLED
-                )
+                cv2.drawContours(red_diff, [contour], -1, (0, 0, 255), thickness=cv2.FILLED)
 
+        # Blend the original image with the image showing the differences
         output_frame = cv2.addWeighted(current_frame, 1 - alpha, red_diff, alpha, 0)
         return output_frame
+
 
     def process_ssim(self, reference_image, current_frame):
         gray_reference = cv2.cvtColor(reference_image, cv2.COLOR_BGR2GRAY)
@@ -408,7 +414,7 @@ class PCBQualityAssuranceApp:
         diff_color = cv2.cvtColor(diff, cv2.COLOR_GRAY2BGR)
         return diff_color
 
-    def process_flicker(self, reference_image, frame, delay=0.2):
+    def process_flicker(self, reference_image, frame, delay=0.3):
         time.sleep(delay)
         self.flicker_state = not self.flicker_state
         return reference_image if self.flicker_state else frame
@@ -443,6 +449,11 @@ class PCBQualityAssuranceApp:
             points1[i, :] = keypoints1[match.queryIdx].pt
             points2[i, :] = keypoints2[match.trainIdx].pt
 
+        # Check if there are enough points to find homography
+        if len(matches) < 4:
+            print("Not enough matches to compute homography.")
+            return current_frame
+
         # Find homography
         h, mask = cv2.findHomography(points2, points1, cv2.RANSAC)
 
@@ -451,6 +462,7 @@ class PCBQualityAssuranceApp:
         aligned_frame = cv2.warpPerspective(current_frame, h, (width, height))
 
         return aligned_frame
+
 
     def match_colors(self, reference_image, current_frame):
         return match_histograms(current_frame, reference_image, channel_axis=-1)
