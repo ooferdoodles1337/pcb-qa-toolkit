@@ -1,6 +1,6 @@
 # PCB Quality Assurance Toolkit
 
-This is an internal tool to perform quality assurance on PCBs through computer vision technique based on [ChangeChip](https://github.com/Scientific-Computing-Lab/ChangeChip)
+This is an internal tool to perform quality assurance on PCBs based on [ChangeChip](https://github.com/Scientific-Computing-Lab/ChangeChip)
 
 ## Installation
 
